@@ -41,11 +41,8 @@ fn compare_files(file1: &Path, file2: &Path) -> io::Result<bool> {
 pub fn favorite() {
     // FIXME: should be replaced for environment variable
     let current = match get_current() {
-        Some(path) => path,
-        None => {
-            error!("Failed to get current wallpaper");
-            return;
-        },
+        Ok(path) => path,
+        Err(e) => panic!("error :'( ---> {e}"),
     };
 
     // Current wallpaper's file name
@@ -68,6 +65,7 @@ pub fn favorite() {
 
     // Path to .../wallpapers/favorite
     let favorites_dir = dir.join("favorites");
+    debug!("------> favorites dir {favorites_dir:#?}");
 
     // Create directories if they don't exist
     if let Err(e) = create_dir_all(&favorites_dir) {
@@ -84,12 +82,15 @@ pub fn favorite() {
             Ok(true) => {
                 info!("Removing wallpaper from favorites: {favorite_file:#?}");
                 if let Err(e) = remove_file(&favorite_file) {
-                    error!("Failed to remove from favorites: {e:#?}");
+                    error!("Failed to remove wallpaper from favorites: {e:#?}");
                 }
                 return;
             }
+            // TODO: add better implementation to handle conflicts
             Ok(false) => {
-                error!("{favorite_file:?} is different from current wallpaper.");
+                info!("Conflict error: a different file with the same name as {favorite_file:?} \
+                exists in the directory");
+                return;
             }
             Err(e) => {
                 error!("Failed to compare files: {e:#?}");
