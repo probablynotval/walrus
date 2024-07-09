@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::favorite::favorite;
+use commands::{favorite::favorite, next::shuffle};
 
 use clap::{Parser, Subcommand};
 use env_logger::{Builder, Target};
@@ -26,12 +26,7 @@ enum Commands {
     #[command(about = "Go back to the previous wallpaper")]
     Previous,
     #[command(about = "Reshuffles the queue")]
-    Shuffle,
-    #[command(about = "How frequently to change wallpaper")]
-    SwapInterval {
-        #[arg(short, long, default_value_t = 300)]
-        interval: u32,
-    },
+    Shuffle { interval: Option<u32> },
     #[command(about = "Removes simple and none transitions (and fade if specified)")]
     BetterRandom,
 }
@@ -45,8 +40,7 @@ fn get_current() -> anyhow::Result<PathBuf> {
     let output_str =
         str::from_utf8(&output.stdout).expect("[swww query] Failed to convert query to utf8");
 
-    let pattern = Regex::new(r"\/.*\.[\w:]+")
-        .expect("[swww query] Failed to create regex");
+    let pattern = Regex::new(r"\/.*\.[\w:]+").expect("[swww query] Failed to create regex");
 
     if let Some(matches) = pattern.find(output_str) {
         let path = matches.as_str();
@@ -58,11 +52,17 @@ fn get_current() -> anyhow::Result<PathBuf> {
 
 fn main() {
     let mut logger = Builder::new();
-    logger.filter(None, LevelFilter::Debug).target(Target::Stderr).init();
+    logger
+        .filter(None, LevelFilter::Debug)
+        .target(Target::Stderr)
+        .init();
 
     let cli = Cli::parse();
     match &cli.command {
         Commands::Favorite => favorite(),
+        Commands::Shuffle { interval } => {
+            shuffle(interval);
+        }
         _ => println!("To be implemented"),
     }
 }
