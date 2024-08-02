@@ -1,8 +1,12 @@
-use std::{path::Path, os::linux::fs::MetadataExt, io::{self, Read}, fs::{create_dir_all, copy, remove_file, metadata, File}};
-use crate::get_current;
+use std::{
+    fs::{copy, create_dir_all, metadata, remove_file, File},
+    io::{self, Read},
+    os::linux::fs::MetadataExt,
+    path::Path,
+};
+use wallflick::get_current;
 
-use log::{info, debug, error};
-
+use log::{debug, error, info};
 
 fn compare_files(file1: &Path, file2: &Path) -> io::Result<bool> {
     // Return early if the files are not the same size
@@ -51,7 +55,7 @@ pub fn favorite() {
         None => {
             error!("Current wallpaper has no file name");
             return;
-        },
+        }
     };
 
     // Path to the file's directory
@@ -60,7 +64,7 @@ pub fn favorite() {
         None => {
             error!("Current wallpaper has no parent directory");
             return;
-        },
+        }
     };
 
     // Path to .../wallpapers/favorite
@@ -88,8 +92,10 @@ pub fn favorite() {
             }
             // TODO: add better implementation to handle conflicts
             Ok(false) => {
-                info!("Conflict error: a different file with the same name as {favorite_file:?} \
-                exists in the directory");
+                info!(
+                    "Conflict error: a different file with the same name as {favorite_file:?} \
+                exists in the directory"
+                );
                 return;
             }
             Err(e) => {
