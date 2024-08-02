@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn Error + 'static>> {
     // Animation
     // Should be equal to refresh rate, no benefit setting it lower
     env::set_var("SWWW_TRANSITION_FPS", "180");
-    // Lower for smoother animation
+    // Lower for smoother animation, higher for sharper animation
     env::set_var("SWWW_TRANSITION_STEP", "160");
     env::set_var("SWWW_TRANSITION_DURATION", "0.75");
 
