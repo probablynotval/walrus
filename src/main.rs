@@ -1,8 +1,8 @@
+mod config;
+mod paths;
+
 use clap::{Parser, Subcommand};
-use std::{
-    env,
-    path::{Path, PathBuf},
-};
+use std::{env, path::PathBuf};
 
 const DEFAULT_PATH: &str = "$HOME/Pictures/Wallpapers";
 
@@ -22,7 +22,7 @@ pub enum Commands {
         #[arg(env = "WALRUS_DIR", default_value_t = String::from(DEFAULT_PATH), help= "Sets the path where Walrus will recursively look for images")]
         path: String,
 
-        #[arg(short, long, help = "Prints the current WALRUS_DIR")]
+        #[arg(short, long, help = "Prints the current directory")]
         get: bool,
     },
 }
