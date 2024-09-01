@@ -2,9 +2,8 @@ pub mod config;
 pub mod paths;
 
 use paths::Paths;
-use rand::{seq::SliceRandom, thread_rng, Rng};
-use std::env;
-use std::process::Command;
+use rand::{thread_rng, Rng};
+use std::{env, process::Command};
 
 pub fn set_wallpaper() {
     get_transition();

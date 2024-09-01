@@ -1,6 +1,3 @@
-mod config;
-mod paths;
-
 use clap::{Parser, Subcommand};
 use std::{env, path::PathBuf};
 
