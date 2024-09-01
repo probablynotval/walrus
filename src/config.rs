@@ -16,11 +16,12 @@ pub struct Config {
 #[derive(Serialize, Deserialize)]
 pub struct General {
     pub path: Option<String>,
+    pub interval: Option<usize>,
+    pub shuffle: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Transition {
-    pub interval: Option<usize>,
     pub fps: Option<usize>,
 }
 
