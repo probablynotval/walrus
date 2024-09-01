@@ -17,9 +17,10 @@ fn test_config_from() -> Result<(), Box<dyn Error>> {
         r#"
         [general]
         path = "$HOME/Pictures"
+        interval = 60
+        shuffle = true
         
         [transition]
-        interval = 60
         fps = 180
     "#
     )?;
@@ -34,13 +35,7 @@ fn test_config_from() -> Result<(), Box<dyn Error>> {
         String::from("$HOME/Pictures")
     );
     assert_eq!(
-        *config
-            .transition
-            .as_ref()
-            .unwrap()
-            .interval
-            .as_ref()
-            .unwrap(),
+        *config.general.as_ref().unwrap().interval.as_ref().unwrap(),
         60 as usize
     );
     assert_eq!(
