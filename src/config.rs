@@ -1,28 +1,73 @@
-use directories::ProjectDirs;
+use directories::{ProjectDirs, UserDirs};
 use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
     fs::{self, File},
-    io,
+    path::PathBuf,
 };
-use toml;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
+    #[serde(default)] // Unsure if this is needed
     pub general: Option<General>,
+    #[serde(default)] // Unsure if this is needed
     pub transition: Option<Transition>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct General {
-    pub path: Option<String>,
-    pub interval: Option<usize>,
+    pub path: Option<PathBuf>,
+    pub interval: Option<u64>,
     pub shuffle: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct Transition {
-    pub fps: Option<usize>,
+    pub duration: Option<f32>,
+    pub fill: Option<String>,
+    pub filter: Option<String>,
+    pub fps: Option<u32>,
+    pub step: Option<u8>,
+    pub resize: Option<String>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            general: Some(General::default()),
+            transition: Some(Transition::default()),
+        }
+    }
+}
+
+impl Default for General {
+    fn default() -> Self {
+        let path = UserDirs::new()
+            .map(|user_dirs| user_dirs.picture_dir().unwrap().to_path_buf())
+            .unwrap()
+            .join("Wallpapers");
+
+        General {
+            path: Some(path),
+            interval: Some(60),
+            shuffle: Some(true),
+        }
+    }
+}
+
+impl Default for Transition {
+    fn default() -> Self {
+        Transition {
+            duration: Some(0.75),
+            fill: Some(String::from("000000")),
+            filter: Some(String::from("Lanczos3")),
+            fps: Some(180),
+            step: Some(160),
+            resize: Some(String::from("crop")),
+        }
+    }
 }
 
 impl Config {
@@ -47,8 +92,8 @@ impl Config {
                     todo!("Handle error cases for creating config.toml: {err}")
                 });
             };
-            let config_content = fs::read_to_string(&config_file)?;
-            let config: Config = toml::from_str(&config_content.as_str())
+            let config_raw = fs::read_to_string(&config_file)?;
+            let config: Config = toml::from_str(&config_raw.as_str())
                 .unwrap_or_else(|err| todo!("Handle error cases for config parsing: {err}"));
             Ok(config)
         } else {
