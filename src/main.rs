@@ -38,7 +38,7 @@ fn main() {
             let mut p = Paths::new().expect("Failed to initialize Paths object");
 
             if p.paths.is_empty() {
-                print!("Paths is empty, exiting...");
+                println!("Paths is empty, exiting...");
                 return;
             }
 
