@@ -1,18 +1,13 @@
 pub mod config;
 pub mod paths;
 
-use paths::Paths;
+use config::Config;
 use rand::{thread_rng, Rng};
 use std::{env, process::Command};
 
-pub fn set_wallpaper() {
+pub fn set_wallpaper(path: &str) {
     get_transition();
 
-    let paths = Paths::new()
-        .unwrap_or_else(|| todo!("Handle error case for initiating Paths object"))
-        .paths;
-    let path = paths.get(0).unwrap().as_str();
-    // NOTE: Need to finish paths object to finish this
     let _ = Command::new("/usr/bin/swww")
         .arg("img")
         .arg(path)
@@ -63,4 +58,15 @@ fn get_transition() {
         }
         &_ => unimplemented!(),
     };
+
+    // Working on implementing values from config here
+    let config = Config::from("config.toml").unwrap_or_default();
+    let transition = config.transition.unwrap_or_default();
+    let duration = transition.duration.unwrap_or_default();
+    let fps = transition.fps.unwrap_or_default();
+    let step = transition.step.unwrap_or_default();
+
+    env::set_var("SWWW_TRANSITION_DURATION", duration.to_string());
+    env::set_var("SWWW_TRANSITION_FPS", fps.to_string());
+    env::set_var("SWWW_TRANSITION_STEP", step.to_string());
 }
