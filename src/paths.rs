@@ -11,8 +11,8 @@ pub struct Paths {
 impl Paths {
     pub fn new() -> Option<Self> {
         // Get directory path from config
-        let config = Config::from("config.toml").unwrap();
-        let directory = config.general.unwrap().path.unwrap();
+        let config = Config::from("config.toml").unwrap_or_default();
+        let directory = config.general.unwrap_or_default().path.unwrap_or_default();
         let mut paths = Vec::new();
         for entry in WalkDir::new(directory).follow_links(true) {
             let entry = entry.unwrap();
@@ -25,10 +25,10 @@ impl Paths {
         Some(Self { paths, index: 0 })
     }
 
-    fn shuffle(&mut self) {
+    pub fn shuffle(&mut self) {
         let mut rng = thread_rng();
         self.paths.shuffle(&mut rng);
         self.index = 0;
-        let _ = set_wallpaper();
+        let _ = set_wallpaper(self.paths.get(self.index).unwrap());
     }
 }
