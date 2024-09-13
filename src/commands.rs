@@ -1,0 +1,14 @@
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(name = "Walrus", version = "0.1.0", about = "SWWW wrapper", long_about = None)]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    #[command(about = "Starts the program")]
+    Init,
+}

@@ -1,19 +1,11 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use std::{thread, time::Duration};
-use walrus::{config::Config, paths::Paths, set_wallpaper};
-
-#[derive(Parser)]
-#[command(name = "Walrus", version = "0.1.0", about = "SWWW wrapper", long_about = None)]
-pub struct Cli {
-    #[command(subcommand)]
-    pub command: Commands,
-}
-
-#[derive(Subcommand, Debug)]
-pub enum Commands {
-    #[command(about = "Starts the program")]
-    Init,
-}
+use walrus::{
+    commands::{Cli, Commands},
+    config::Config,
+    paths::Paths,
+    set_wallpaper,
+};
 
 fn main() {
     let mut p = Paths::new().expect("Failed to initialize Paths object");
