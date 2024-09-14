@@ -17,8 +17,8 @@ pub struct Config {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct General {
-    pub path: Option<PathBuf>,
     pub interval: Option<u64>,
+    pub path: Option<PathBuf>,
     pub shuffle: Option<bool>,
 }
 
@@ -50,8 +50,8 @@ impl Default for General {
             .join("Wallpapers");
 
         General {
+            interval: Some(300),
             path: Some(path),
-            interval: Some(60),
             shuffle: Some(true),
         }
     }
@@ -63,7 +63,7 @@ impl Default for Transition {
             duration: Some(0.75),
             fill: Some(String::from("000000")),
             filter: Some(String::from("Lanczos3")),
-            fps: Some(180),
+            fps: Some(60),
             step: Some(160),
             resize: Some(String::from("crop")),
         }
