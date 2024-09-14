@@ -1,7 +1,7 @@
 <div align="center">
 
 # Walrus
-##### Wallpaper manager for SWWW
+##### Wallpaper manager for [swww](https://github.com/LGFae/swww)
 
 </div>
 
@@ -13,7 +13,7 @@
 * [Roadmap](#roadmap)
 
 ## Why?
-I wanted to make using [SWWW](https://github.com/LGFae/swww) slightly simpler. For now this is just a glorified script with a CLI.
+I wanted to make using [swww](https://github.com/LGFae/swww) slightly simpler. For now this is just a glorified script with a CLI.
 
 ## Features
 - Configuration via TOML
@@ -29,8 +29,8 @@ walrus init
 The following are the default configuration values. The configuration file is located at `$HOME/.config/walrus/config.toml`
 ```TOML
 [general]
-path = "$HOME/Pictures/Wallpapers"
 interval = 300
+path = "$HOME/Pictures/Wallpapers"
 shuffle = true
 
 [transition]
