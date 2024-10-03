@@ -62,8 +62,8 @@ fn test_config_from_defaults() -> Result<(), Box<dyn Error>> {
             .unwrap()
             .join("Wallpapers")
     );
-    assert_eq!(interval, 60 as u64);
-    assert_eq!(fps, 180 as u32);
+    assert_eq!(interval, 300 as u64);
+    assert_eq!(fps, 60 as u32);
 
     Ok(())
 }
