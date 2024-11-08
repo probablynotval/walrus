@@ -2,6 +2,7 @@ use directories::{ProjectDirs, UserDirs};
 use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
+    fmt,
     fs::{self, File},
     path::PathBuf,
 };
@@ -67,6 +68,84 @@ impl Default for Transition {
             step: Some(160),
             resize: Some(String::from("crop")),
         }
+    }
+}
+
+impl fmt::Display for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Current configuration")?;
+        writeln!(f, "---------------------")?;
+        writeln!(f, "{}", self.general.clone().unwrap_or_default())?;
+        writeln!(f, "{}", self.transition.clone().unwrap_or_default())?;
+
+        Ok(())
+    }
+}
+
+impl fmt::Display for General {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "[General]")?;
+        writeln!(
+            f,
+            "Interval: {}",
+            self.interval
+                .map(|x| x.to_string())
+                .unwrap_or_else(|| "None".into())
+        )?;
+        writeln!(
+            f,
+            "Path: {}",
+            self.path.as_deref().map(|x| x.display()).unwrap()
+        )?;
+        writeln!(
+            f,
+            "Shuffle: {}",
+            self.shuffle
+                .map(|x| x.to_string())
+                .unwrap_or_else(|| "None".into())
+        )
+    }
+}
+
+impl fmt::Display for Transition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "[Transition]")?;
+        writeln!(
+            f,
+            "Duration: {}",
+            self.duration
+                .map(|x| x.to_string())
+                .unwrap_or_else(|| "None".into())
+        )?;
+        writeln!(
+            f,
+            "Fill: {}",
+            self.fill.as_deref().unwrap_or_else(|| "None".into())
+        )?;
+        writeln!(
+            f,
+            "Filter: {}",
+            self.filter.as_deref().unwrap_or_else(|| "None".into())
+        )?;
+        writeln!(
+            f,
+            "FPS: {}",
+            self.fps
+                .map(|x| x.to_string())
+                .unwrap_or_else(|| "None".into())
+        )?;
+        writeln!(
+            f,
+            "Step: {}",
+            self.step
+                .map(|x| x.to_string())
+                .unwrap_or_else(|| "None".into())
+        )?;
+        writeln!(
+            f,
+            "Resize: {}",
+            self.resize.as_deref().unwrap_or_else(|| "None".into())
+        )
     }
 }
 

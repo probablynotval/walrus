@@ -4,11 +4,11 @@ use clap::{Parser, Subcommand};
 #[command(name = "Walrus", version = "0.1.0", about = "SWWW wrapper", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    #[command(about = "Starts the program")]
-    Init,
+    #[command(about = "Prints config")]
+    Config,
 }
