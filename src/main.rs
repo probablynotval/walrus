@@ -1,41 +1,63 @@
 use clap::Parser;
-use std::{thread, time::Duration};
+use ctrlc;
+use log::{debug, error, LevelFilter};
+use std::sync::mpsc;
 use walrus::{
     commands::{Cli, Commands},
     config::Config,
-    paths::Paths,
-    set_wallpaper,
+    handler::Walrus,
+    init_logger,
+    ipc::{self, send_ipc_command},
 };
 
 fn main() {
-    let mut p = Paths::new().expect("Failed to initialize Paths object");
-    if p.paths.is_empty() {
-        println!("Paths is empty, exiting...");
-        return;
-    }
-    let index = p.index;
+    init_logger(LevelFilter::Trace).unwrap_or_else(|e| {
+        error!("Failed to initialize logger: {e}\nContinuing without loggging...");
+    });
 
     let config = Config::from("config.toml").unwrap_or_default();
 
+    log::set_max_level(config.get_debug_level());
+    debug!("Logging with log level: {}", config.get_debug_level());
+
     let cli = Cli::parse();
-    match &cli.command {
-        Some(Commands::Config) => {
-            println!("{config}");
-        }
-        None => {
-            let general = config.general.unwrap_or_default();
-            let interval = general.interval.unwrap_or_default();
-            let shuffle = general.shuffle.unwrap_or_default();
-            loop {
-                if shuffle {
-                    p.shuffle();
-                }
-                for path in &p.paths {
-                    println!("Changing wallpaper: {path}");
-                    set_wallpaper(path.as_str());
-                    thread::sleep(Duration::from_secs(interval));
-                }
+    if let Some(cmd) = &cli.command {
+        match cmd {
+            Commands::Config => {
+                debug!("Printing config to stdout...");
+                return println!("{config}");
+            }
+            Commands::Next => {
+                debug!("Attempting to send Next command via IPC...");
+                return send_ipc_command(Commands::Next)
+                    .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
+            }
+            Commands::Shutdown => {
+                debug!("Attempting to send Shutdown command via IPC...");
+                return send_ipc_command(Commands::Shutdown)
+                    .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
             }
         }
     }
+
+    let mut walrus = Walrus::new(config).expect("Fatal: failed to initialize Walrus object");
+    if walrus.queue.is_empty() {
+        error!("Queue is empty, exiting...");
+        return;
+    }
+
+    let (tx, rx) = mpsc::channel();
+
+    let ctrlc_tx = tx.clone();
+    ctrlc::set_handler(move || {
+        let _ = ctrlc_tx.send(Commands::Shutdown);
+    })
+    .expect("Error setting Ctrl-C handler");
+
+    let ipc_tx = tx.clone();
+    if let Err(e) = ipc::setup_ipc(ipc_tx) {
+        error!("Failed to start IPC server: {e:#?}");
+        return;
+    }
+    walrus.run(rx);
 }

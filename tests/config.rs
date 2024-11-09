@@ -30,7 +30,13 @@ fn test_config_from() -> Result<(), Box<dyn Error>> {
     let config = Config::from(path_str)?;
 
     assert_eq!(
-        *config.general.as_ref().unwrap().path.as_ref().unwrap(),
+        *config
+            .general
+            .as_ref()
+            .unwrap()
+            .wallpaper_path
+            .as_ref()
+            .unwrap(),
         PathBuf::from("$HOME/Pictures")
     );
     assert_eq!(
@@ -49,7 +55,7 @@ fn test_config_from() -> Result<(), Box<dyn Error>> {
 fn test_config_from_defaults() -> Result<(), Box<dyn Error>> {
     let config = Config::default();
     let general = config.clone().general.unwrap_or_default();
-    let path = general.path.unwrap_or_default();
+    let path = general.wallpaper_path.unwrap_or_default();
     let interval = general.interval.unwrap_or_default();
     let transition = config.clone().transition.unwrap_or_default();
     let fps = transition.fps.unwrap_or_default();
