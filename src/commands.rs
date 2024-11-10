@@ -11,8 +11,10 @@ pub struct Cli {
 pub enum Commands {
     #[command(about = "Prints config")]
     Config,
-    #[command(about = "Switch to the next wallpaper")]
+    #[command(about = "Go to the next wallpaper in queue")]
     Next,
+    #[command(about = "Go to the previous wallpaper in queue")]
+    Previous,
     #[command(about = "Stops the program")]
     Shutdown,
 }

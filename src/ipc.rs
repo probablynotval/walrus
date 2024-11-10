@@ -13,7 +13,8 @@ impl Commands {
     fn to_bytes(&self) -> Option<u8> {
         match self {
             Commands::Next => Some(1),
-            Commands::Shutdown => Some(2),
+            Commands::Previous => Some(2),
+            Commands::Shutdown => Some(100),
             Commands::Config => None,
         }
     }
@@ -21,7 +22,8 @@ impl Commands {
     fn from_byte(byte: u8) -> Option<Commands> {
         match byte {
             1 => Some(Commands::Next),
-            2 => Some(Commands::Shutdown),
+            2 => Some(Commands::Previous),
+            100 => Some(Commands::Shutdown),
             _ => None,
         }
     }
@@ -51,15 +53,19 @@ impl IPCServer {
                         if stream.read_exact(&mut buffer).is_ok() {
                             if let Some(command) = Commands::from_byte(buffer[0]) {
                                 match command {
+                                    Commands::Config => (),
                                     Commands::Next => {
                                         debug!("IPC received Next command");
                                         let _ = tx.send(Commands::Next);
+                                    }
+                                    Commands::Previous => {
+                                        debug!("IPC received Previous command");
+                                        let _ = tx.send(Commands::Previous);
                                     }
                                     Commands::Shutdown => {
                                         debug!("IPC received Shutdown command");
                                         let _ = tx.send(Commands::Shutdown);
                                     }
-                                    Commands::Config => (),
                                 }
                             }
                         }

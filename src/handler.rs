@@ -1,5 +1,5 @@
 use crate::{commands::Commands, config::Config, set_wallpaper};
-use log::{debug, info, trace};
+use log::{debug, error, info, trace};
 use rand::{seq::SliceRandom, thread_rng};
 use std::{
     fmt, fs,
@@ -57,9 +57,14 @@ impl Walrus {
         while cont {
             let timeout = Duration::from_secs(interval);
             match rx.recv_timeout(timeout) {
+                Ok(Commands::Config) => unreachable!(),
                 Ok(Commands::Next) => {
                     debug!("Received Next command");
                     self.next_wallpaper();
+                }
+                Ok(Commands::Previous) => {
+                    debug!("Received Previous command");
+                    self.previous_wallpaper();
                 }
                 Ok(Commands::Shutdown) => {
                     debug!("Received Shutdown command");
@@ -68,13 +73,12 @@ impl Walrus {
                     }
                     cont = false;
                 }
-                Ok(Commands::Config) => unreachable!(),
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     debug!("Timeout: changing wallpapers...");
                     self.next_wallpaper();
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    info!("Timeout: channel disconnected");
+                    error!("Timeout: channel disconnected");
                     cont = false;
                 }
             }
@@ -90,6 +94,14 @@ impl Walrus {
 
     fn next_wallpaper(&mut self) {
         self.index = (self.index + 1) % self.queue.len();
+        if let Some(wallpaper) = self.queue.get(self.index) {
+            info!("Setting wallpaper: {wallpaper}");
+            set_wallpaper(wallpaper.as_str(), self.config.clone());
+        }
+    }
+
+    fn previous_wallpaper(&mut self) {
+        self.index = (self.index + self.queue.len() - 1) % self.queue.len();
         if let Some(wallpaper) = self.queue.get(self.index) {
             info!("Setting wallpaper: {wallpaper}");
             set_wallpaper(wallpaper.as_str(), self.config.clone());
