@@ -12,8 +12,9 @@ use walkdir::WalkDir;
 #[derive(Clone)]
 pub struct Walrus {
     pub config: Config,
-    pub queue: Vec<String>,
     pub index: usize,
+    pub paused: bool,
+    pub queue: Vec<String>,
 }
 
 impl Walrus {
@@ -35,6 +36,7 @@ impl Walrus {
         }
         Some(Self {
             config,
+            paused: false,
             queue,
             index: 0,
         })
@@ -62,9 +64,17 @@ impl Walrus {
                     debug!("Received Next command");
                     self.next_wallpaper();
                 }
+                Ok(Commands::Pause) => {
+                    debug!("Received Pause command");
+                    self.pause();
+                }
                 Ok(Commands::Previous) => {
                     debug!("Received Previous command");
                     self.previous_wallpaper();
+                }
+                Ok(Commands::Resume) => {
+                    debug!("Received Resume command");
+                    self.resume();
                 }
                 Ok(Commands::Shutdown) => {
                     debug!("Received Shutdown command");
@@ -74,8 +84,11 @@ impl Walrus {
                     cont = false;
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    debug!("Timeout: changing wallpapers...");
-                    self.next_wallpaper();
+                    debug!("Timeout: paused, not changing wallpapers");
+                    if !self.paused {
+                        debug!("Timeout: changing wallpapers...");
+                        self.next_wallpaper();
+                    }
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     error!("Timeout: channel disconnected");
@@ -100,6 +113,10 @@ impl Walrus {
         }
     }
 
+    fn pause(&mut self) {
+        self.paused = true;
+    }
+
     fn previous_wallpaper(&mut self) {
         self.index = (self.index + self.queue.len() - 1) % self.queue.len();
         if let Some(wallpaper) = self.queue.get(self.index) {
@@ -112,6 +129,10 @@ impl Walrus {
         let mut rng = thread_rng();
         self.queue.shuffle(&mut rng);
         self.index = 0;
+    }
+
+    fn resume(&mut self) {
+        self.paused = false;
     }
 }
 

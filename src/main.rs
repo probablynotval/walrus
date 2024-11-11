@@ -32,9 +32,19 @@ fn main() {
                 return send_ipc_command(Commands::Next)
                     .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
             }
+            Commands::Pause => {
+                debug!("Attempting to send Pause command via IPC...");
+                return send_ipc_command(Commands::Pause)
+                    .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
+            }
             Commands::Previous => {
                 debug!("Attempting to send Previous command via IPC...");
                 return send_ipc_command(Commands::Previous)
+                    .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
+            }
+            Commands::Resume => {
+                debug!("Attempting to send Resume command via IPC...");
+                return send_ipc_command(Commands::Resume)
                     .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
             }
             Commands::Shutdown => {

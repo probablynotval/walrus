@@ -12,17 +12,21 @@ use std::{
 impl Commands {
     fn to_bytes(&self) -> Option<u8> {
         match self {
-            Commands::Next => Some(1),
-            Commands::Previous => Some(2),
-            Commands::Shutdown => Some(100),
             Commands::Config => None,
+            Commands::Next => Some(1),
+            Commands::Pause => Some(2),
+            Commands::Previous => Some(3),
+            Commands::Resume => Some(4),
+            Commands::Shutdown => Some(100),
         }
     }
 
     fn from_byte(byte: u8) -> Option<Commands> {
         match byte {
             1 => Some(Commands::Next),
-            2 => Some(Commands::Previous),
+            2 => Some(Commands::Pause),
+            3 => Some(Commands::Previous),
+            4 => Some(Commands::Resume),
             100 => Some(Commands::Shutdown),
             _ => None,
         }
@@ -58,9 +62,17 @@ impl IPCServer {
                                         debug!("IPC received Next command");
                                         let _ = tx.send(Commands::Next);
                                     }
+                                    Commands::Pause => {
+                                        debug!("IPC received Pause command");
+                                        let _ = tx.send(Commands::Pause);
+                                    }
                                     Commands::Previous => {
                                         debug!("IPC received Previous command");
                                         let _ = tx.send(Commands::Previous);
+                                    }
+                                    Commands::Resume => {
+                                        debug!("IPC received Resume command");
+                                        let _ = tx.send(Commands::Resume);
                                     }
                                     Commands::Shutdown => {
                                         debug!("IPC received Shutdown command");

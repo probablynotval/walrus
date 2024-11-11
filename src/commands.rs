@@ -13,8 +13,12 @@ pub enum Commands {
     Config,
     #[command(about = "Go to the next wallpaper in queue")]
     Next,
+    #[command(about = "Pause the playback")]
+    Pause,
     #[command(about = "Go to the previous wallpaper in queue")]
     Previous,
+    #[command(about = "Resume the playback")]
+    Resume,
     #[command(about = "Stops the program")]
     Shutdown,
 }
