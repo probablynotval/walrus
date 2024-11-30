@@ -10,6 +10,7 @@
 * [Features](#features)
 * [Usage](#usage)
 * [Configuration](#configuration)
+* [Build](#build)
 * [Roadmap](#roadmap)
 
 ## Why?
@@ -56,6 +57,9 @@ wave_size = [55, 60, 45, 50]
 ```
 
 **NOTE**: if no configuration is found the program will use these defaults.
+
+## Build
+For now build from source.
 
 ## Roadmap
 - [x] Manual wallpaper cycling (next & previous commands)
