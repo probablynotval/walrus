@@ -5,9 +5,9 @@ use std::sync::mpsc;
 use walrus::{
     commands::{Cli, Commands},
     config::Config,
-    handler::Walrus,
-    init_logger,
+    daemon::Daemon,
     ipc::{self, send_ipc_command},
+    utils::init_logger,
 };
 
 fn main() {
@@ -55,7 +55,7 @@ fn main() {
         }
     }
 
-    let mut walrus = Walrus::new(config).expect("Fatal: failed to initialize Walrus object");
+    let mut walrus = Daemon::new(config).expect("Fatal: failed to initialize Walrus Daemon");
     if walrus.queue.is_empty() {
         error!("Queue is empty, exiting...");
         return;

@@ -8,6 +8,28 @@ use std::{
     path::PathBuf,
 };
 
+#[derive(Clone, Debug)]
+pub enum TransitionFlavour {
+    Wipe,
+    Wave,
+    Grow,
+    Outer,
+}
+
+impl TryFrom<&str> for TransitionFlavour {
+    type Error = &'static str;
+
+    fn try_from(flavour: &str) -> Result<Self, Self::Error> {
+        match flavour.to_lowercase().as_str() {
+            "wipe" => Ok(Self::Wipe),
+            "wave" => Ok(Self::Wave),
+            "grow" => Ok(Self::Grow),
+            "outer" => Ok(Self::Outer),
+            &_ => Err("Transition type does not exist"),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct Config {
