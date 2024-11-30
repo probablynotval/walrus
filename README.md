@@ -13,39 +13,52 @@
 * [Roadmap](#roadmap)
 
 ## Why?
-I wanted to make using [swww](https://github.com/LGFae/swww) slightly simpler. For now this is just a glorified script with a CLI.
+I wanted to make using [swww](https://github.com/LGFae/swww) simpler.
 
 ## Features
-- Configuration via TOML
+- Simple configuration via TOML
 - Plug and Play — although you will likely need to configure the path to your wallpapers
+- Cycle through wallpapers
+- Pause & Resume playback
 
 ## Usage
 Simply start the program with:
 ```
-walrus init
+walrus
+```
+
+A list of commands can be found by running
+```
+walrus help
 ```
 
 ## Configuration
 The following are the default configuration values. The configuration file is located at `$HOME/.config/walrus/config.toml`
 ```TOML
 [general]
+debug = "info"
 interval = 300
-path = "$HOME/Pictures/Wallpapers"
 shuffle = true
+swww_path = "/usr/bin/swww"
+wallpaper_path = "~/Pictures/Wallpapers"
 
 [transition]
-duration = 0.75
+bezier = [0.40, 0.0, 0.6, 1.0]
+duration = 1.0
+dynamic_duration = true             # Changes the transition duration based on pixels travelled
 fill = "000000"
 filter = "Lanczos3"
+flavour = ["wipe", "wave", "grow", "outer"]
 fps = 60
-step = 160
 resize = "crop"
+step = 60
+wave_size = [55, 60, 45, 50]
 ```
 
 **NOTE**: if no configuration is found the program will use these defaults.
 
 ## Roadmap
-- [ ] Manual wallpaper cycling (next & previous commands)
+- [x] Manual wallpaper cycling (next & previous commands)
+- [x] Configuration options for advanced features (such as min/max wave size & transition bezier)
 - [ ] Advanced wallpaper scheduling, depending on time of day, etc.
-- [ ] Configuration options for advanced features (such as min/max wave size & transition bezier)
 - [ ] Optionally independent configuration per transition type
