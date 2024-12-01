@@ -66,3 +66,4 @@ For now build from source.
 - [x] Configuration options for advanced features (such as min/max wave size & transition bezier)
 - [ ] Advanced wallpaper scheduling, depending on time of day, etc.
 - [ ] Optionally independent configuration per transition type
+- [ ] Config hot reloading
