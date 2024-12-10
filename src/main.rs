@@ -1,5 +1,4 @@
 use clap::Parser;
-use ctrlc;
 use log::{debug, error, LevelFilter};
 use std::sync::mpsc;
 use walrus::{
