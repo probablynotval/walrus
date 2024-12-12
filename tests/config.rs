@@ -9,13 +9,12 @@ fn test_config_from() -> Result<(), Box<dyn Error>> {
     let dir = tempdir()?;
     let config_path = dir.path().join("config.toml");
 
-    // Create a sample config.toml file
     let mut file = File::create(&config_path)?;
     writeln!(
         file,
         r#"
         [general]
-        path = "$HOME/Pictures"
+        wallpaper_path = "$HOME/Pictures"
         interval = 60
         shuffle = true
         
@@ -26,7 +25,6 @@ fn test_config_from() -> Result<(), Box<dyn Error>> {
 
     let path_str = config_path.to_str().unwrap();
 
-    // Test the Config::from function
     let config = Config::from(path_str)?;
 
     assert_eq!(
@@ -41,11 +39,11 @@ fn test_config_from() -> Result<(), Box<dyn Error>> {
     );
     assert_eq!(
         *config.general.as_ref().unwrap().interval.as_ref().unwrap(),
-        60 as u64
+        60_u64
     );
     assert_eq!(
         *config.transition.as_ref().unwrap().fps.as_ref().unwrap(),
-        180 as u32
+        180_u32
     );
 
     Ok(())
@@ -68,8 +66,8 @@ fn test_config_from_defaults() -> Result<(), Box<dyn Error>> {
             .unwrap()
             .join("Wallpapers")
     );
-    assert_eq!(interval, 300 as u64);
-    assert_eq!(fps, 60 as u32);
+    assert_eq!(interval, 300_u64);
+    assert_eq!(fps, 60_u32);
 
     Ok(())
 }
