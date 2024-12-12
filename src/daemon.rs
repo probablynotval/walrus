@@ -211,7 +211,8 @@ impl Daemon {
             .arg("img")
             .arg(path)
             .spawn()
-            .unwrap();
+            .unwrap()
+            .wait();
     }
 
     fn resume(&mut self) {

@@ -10,14 +10,7 @@ use walrus::{
 };
 
 fn main() {
-    init_logger(LevelFilter::Trace).unwrap_or_else(|e| {
-        error!("Failed to initialize logger: {e}\nContinuing without loggging...");
-    });
-
     let config = Config::from("config.toml").unwrap_or_default();
-
-    log::set_max_level(config.get_debug_level());
-    debug!("Logging with log level: {}", config.get_debug_level());
 
     let cli = Cli::parse();
     if let Some(cmd) = &cli.command {
@@ -53,6 +46,12 @@ fn main() {
             }
         }
     }
+
+    init_logger(LevelFilter::Trace).unwrap_or_else(|e| {
+        eprintln!("Failed to initialize logger: {e}\nContinuing without loggging...");
+    });
+    log::set_max_level(config.get_debug_level());
+    debug!("Logging with log level: {}", config.get_debug_level());
 
     let mut walrus = Daemon::new(config).expect("Fatal: failed to initialize Walrus Daemon");
     if walrus.queue.is_empty() {
