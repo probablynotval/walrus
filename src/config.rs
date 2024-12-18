@@ -1,4 +1,5 @@
-use directories::{ProjectDirs, UserDirs};
+use crate::utils::get_config_file;
+use directories::UserDirs;
 use log::{warn, LevelFilter};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -7,28 +8,6 @@ use std::{
     fs,
     path::PathBuf,
 };
-
-#[derive(Clone, Debug)]
-pub enum TransitionFlavour {
-    Wipe,
-    Wave,
-    Grow,
-    Outer,
-}
-
-impl TryFrom<&str> for TransitionFlavour {
-    type Error = &'static str;
-
-    fn try_from(flavour: &str) -> Result<Self, Self::Error> {
-        match flavour.to_lowercase().as_str() {
-            "wipe" => Ok(Self::Wipe),
-            "wave" => Ok(Self::Wave),
-            "grow" => Ok(Self::Grow),
-            "outer" => Ok(Self::Outer),
-            &_ => Err("Transition type does not exist"),
-        }
-    }
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
@@ -112,8 +91,7 @@ impl Default for Transition {
 
 impl Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "")?;
-        writeln!(f, "Current configuration")?;
+        writeln!(f, "\nCurrent configuration")?;
         writeln!(f, "---------------------")?;
         writeln!(f, "{}", self.general.clone().unwrap_or_default())?;
         writeln!(f, "{}", self.transition.clone().unwrap_or_default())?;
@@ -124,11 +102,7 @@ impl Display for Config {
 impl Display for General {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "[General]")?;
-        writeln!(
-            f,
-            "debug = {}",
-            self.debug.as_deref().unwrap_or_else(|| "None".into())
-        )?;
+        writeln!(f, "debug = {}", self.debug.as_deref().unwrap_or("None"))?;
         writeln!(
             f,
             "interval = {}",
@@ -139,14 +113,12 @@ impl Display for General {
         writeln!(
             f,
             "shuffle = {}",
-            self.shuffle
-                .map(|x| x.to_string())
-                .unwrap_or_else(|| "None".into())
+            self.shuffle.map(|x| x.to_string()).unwrap_or("None".into())
         )?;
         writeln!(
             f,
             "swww_path = {}",
-            self.swww_path.as_deref().unwrap_or_else(|| "None".into())
+            self.swww_path.as_deref().unwrap_or("None")
         )?;
         writeln!(
             f,
@@ -179,16 +151,8 @@ impl Display for Transition {
                 .map(|x| x.to_string())
                 .unwrap_or_else(|| "None".into())
         )?;
-        writeln!(
-            f,
-            "fill = {}",
-            self.fill.as_deref().unwrap_or_else(|| "None".into())
-        )?;
-        writeln!(
-            f,
-            "filter = {}",
-            self.filter.as_deref().unwrap_or_else(|| "None".into())
-        )?;
+        writeln!(f, "fill = {}", self.fill.as_deref().unwrap_or("None"))?;
+        writeln!(f, "filter = {}", self.filter.as_deref().unwrap_or("None"))?;
         if let Some(flavour) = &self.flavour {
             let flavours = flavour.join(", ");
             writeln!(f, "flavour = [{}]", flavours)?;
@@ -207,11 +171,7 @@ impl Display for Transition {
                 .map(|x| x.to_string())
                 .unwrap_or_else(|| "None".into())
         )?;
-        writeln!(
-            f,
-            "resize = {}",
-            self.resize.as_deref().unwrap_or_else(|| "None".into())
-        )?;
+        writeln!(f, "resize = {}", self.resize.as_deref().unwrap_or("None"))?;
         let wave_size = self.wave_size.unwrap();
         writeln!(
             f,
@@ -222,31 +182,21 @@ impl Display for Transition {
 }
 
 impl Config {
-    pub fn from(config_file: &str) -> Result<Self, Box<dyn Error>> {
-        if let Some(project_dirs) = ProjectDirs::from("qual", "org", "walrus") {
-            let config_dir = project_dirs.config_dir();
-            let walrus_dir_exists = match fs::metadata(config_dir) {
-                Ok(metadata) => metadata.is_dir(),
-                Err(_) => false,
-            };
-            if !walrus_dir_exists {
-                fs::create_dir_all(config_dir)?;
-            };
-
-            let config_file = config_dir.join(config_file);
-            let config_raw = fs::read_to_string(&config_file)?;
-            let config: Self = toml::from_str(&config_raw.as_str()).unwrap_or_else(|e| {
-                warn!("Syntax error in config: {e}\nFalling back to defaults...");
-                Self::default()
-            });
-            Ok(config)
-        } else {
-            Err("Failed to create Config object".into())
-        }
+    pub fn new(optpath: Option<&str>) -> Result<Self, Box<dyn Error>> {
+        let path = get_config_file("config.toml");
+        let config_raw = match optpath {
+            Some(p) => fs::read_to_string(p)?,
+            None => fs::read_to_string(&path)?,
+        };
+        let config: Self = toml::from_str(config_raw.as_str()).unwrap_or_else(|e| {
+            warn!("Syntax error in config: {e}\nFalling back to defaults...");
+            Self::default()
+        });
+        Ok(config)
     }
 
     pub fn get_debug_level(&self) -> LevelFilter {
-        return match self
+        match self
             .clone()
             .general
             .unwrap_or_default()
@@ -265,6 +215,28 @@ impl Config {
                 warn!("Unknown debug option in config, falling back to default.");
                 LevelFilter::Info
             }
-        };
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum TransitionFlavour {
+    Wipe,
+    Wave,
+    Grow,
+    Outer,
+}
+
+impl TryFrom<&str> for TransitionFlavour {
+    type Error = &'static str;
+
+    fn try_from(flavour: &str) -> Result<Self, Self::Error> {
+        match flavour.to_lowercase().as_str() {
+            "wipe" => Ok(Self::Wipe),
+            "wave" => Ok(Self::Wave),
+            "grow" => Ok(Self::Grow),
+            "outer" => Ok(Self::Outer),
+            &_ => Err("Transition type does not exist"),
+        }
     }
 }

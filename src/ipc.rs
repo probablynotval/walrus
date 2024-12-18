@@ -1,4 +1,4 @@
-use crate::commands::Commands;
+use crate::{commands::Commands, utils::SOCKET_PATH};
 use log::{debug, error};
 use std::{
     fs,
@@ -17,6 +17,7 @@ impl Commands {
             Commands::Pause => Some(2),
             Commands::Previous => Some(3),
             Commands::Resume => Some(4),
+            Commands::Reload => Some(5),
             Commands::Shutdown => Some(100),
         }
     }
@@ -27,6 +28,7 @@ impl Commands {
             2 => Some(Commands::Pause),
             3 => Some(Commands::Previous),
             4 => Some(Commands::Resume),
+            5 => Some(Commands::Reload),
             100 => Some(Commands::Shutdown),
             _ => None,
         }
@@ -74,6 +76,10 @@ impl IPCServer {
                                         debug!("IPC received Resume command");
                                         let _ = tx.send(Commands::Resume);
                                     }
+                                    Commands::Reload => {
+                                        debug!("IPC received Reload command");
+                                        let _ = tx.send(Commands::Reload);
+                                    }
                                     Commands::Shutdown => {
                                         debug!("IPC received Shutdown command");
                                         let _ = tx.send(Commands::Shutdown);
@@ -103,14 +109,15 @@ impl IPCClient {
     fn send_command(&self, command: Commands) -> io::Result<()> {
         let mut stream = UnixStream::connect(&self.socket_path)?;
         let Some(cmd) = command.to_bytes() else {
-            return Err(io::Error::new(io::ErrorKind::Other, "Failed to convert command to bytes"));
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Failed to convert command to bytes",
+            ));
         };
         stream.write_all(&[cmd])?;
         Ok(())
     }
 }
-
-const SOCKET_PATH: &str = "/tmp/walrus.sock";
 
 pub fn setup_ipc(tx: Sender<Commands>) -> io::Result<()> {
     debug!("Starting IPC server");

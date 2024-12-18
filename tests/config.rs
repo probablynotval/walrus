@@ -20,12 +20,12 @@ fn test_config_from() -> Result<(), Box<dyn Error>> {
         
         [transition]
         fps = 180
-    "#
+        "#
     )?;
 
     let path_str = config_path.to_str().unwrap();
 
-    let config = Config::from(path_str)?;
+    let config = Config::new(Some(path_str))?;
 
     assert_eq!(
         *config

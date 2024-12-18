@@ -9,6 +9,7 @@ clap = { version = "4.5.13", features = ["derive", "env"] }
 ctrlc = { version = "3.4.5", features = ["termination"] }
 directories = "5.0.1"
 log = "0.4.22"
+notify = "7.0.0"
 rand = "0.8.5"
 serde = { version = "1.0.204", features = ["derive"] }
 simplelog = "0.12.2"

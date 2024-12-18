@@ -1,7 +1,7 @@
 use crate::{
     commands::Commands,
     config::{Config, TransitionFlavour},
-    utils::normalize_duration,
+    utils::{normalize_duration, SOCKET_PATH},
 };
 use log::{debug, error, info, trace};
 use rand::{seq::SliceRandom, thread_rng, Rng};
@@ -39,6 +39,7 @@ impl Daemon {
                 }
             }
         }
+        debug!("Starting with Config: {}", config);
         Some(Self {
             config,
             paused: false,
@@ -48,15 +49,15 @@ impl Daemon {
     }
 
     pub fn run(&mut self, rx: Receiver<Commands>) {
+        // TODO: for hot reloading to work I will need a better way to get config values, since
+        // they do not update inside the loop
         let config = self.config.clone();
         let general = config.clone().general.unwrap_or_default();
-        let interval = general.interval.unwrap_or_default();
         let shuffle = general.shuffle.unwrap_or_default();
+        let interval = general.interval.unwrap_or_default();
 
         if shuffle {
-            trace!("Pre-shuffle\n{self}");
             self.shuffle_queue();
-            trace!("Shuffled queue\n{self}");
         }
         self.current_wallpaper();
 
@@ -81,19 +82,23 @@ impl Daemon {
                     debug!("Received Resume command");
                     self.resume();
                 }
+                Ok(Commands::Reload) => {
+                    self.reload_config();
+                }
                 Ok(Commands::Shutdown) => {
                     debug!("Received Shutdown command");
-                    if Path::new("/tmp/walrus.sock").exists() {
-                        let _ = fs::remove_file("/tmp/walrus.sock");
+                    if Path::new(SOCKET_PATH).exists() {
+                        let _ = fs::remove_file(SOCKET_PATH);
                     }
                     cont = false;
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    debug!("Timeout: paused, not changing wallpapers");
                     if !self.paused {
                         debug!("Timeout: changing wallpapers...");
                         self.next_wallpaper();
+                        continue;
                     }
+                    debug!("Timeout: paused, not changing wallpapers");
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     error!("Timeout: channel disconnected");
@@ -213,6 +218,14 @@ impl Daemon {
             .spawn()
             .unwrap()
             .wait();
+    }
+
+    fn reload_config(&mut self) {
+        info!("Reloading config...");
+        debug!("Old config: {:#?}", self.config);
+        let config = Config::new(None).unwrap_or_default();
+        self.config = config;
+        debug!("New config: {:#?}", self.config);
     }
 
     fn resume(&mut self) {

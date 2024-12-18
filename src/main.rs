@@ -1,3 +1,5 @@
+#![warn(clippy::pedantic)]
+
 use clap::Parser;
 use log::{debug, error, LevelFilter};
 use std::sync::mpsc;
@@ -6,11 +8,11 @@ use walrus::{
     config::Config,
     daemon::Daemon,
     ipc::{self, send_ipc_command},
-    utils::init_logger,
+    utils::{self, get_config_file, init_logger},
 };
 
 fn main() {
-    let config = Config::from("config.toml").unwrap_or_default();
+    let config = Config::new(None).unwrap_or_default();
 
     let cli = Cli::parse();
     if let Some(cmd) = &cli.command {
@@ -32,6 +34,11 @@ fn main() {
             Commands::Previous => {
                 debug!("Attempting to send Previous command via IPC...");
                 return send_ipc_command(Commands::Previous)
+                    .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
+            }
+            Commands::Reload => {
+                debug!("Attempting to send Reload command via IPC...");
+                return send_ipc_command(Commands::Reload)
                     .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
             }
             Commands::Resume => {
@@ -61,14 +68,15 @@ fn main() {
 
     let (tx, rx) = mpsc::channel();
 
+    utils::watch(get_config_file("config.toml"), tx.clone()).expect("Error watching config.toml");
+
     let ctrlc_tx = tx.clone();
     ctrlc::set_handler(move || {
         let _ = ctrlc_tx.send(Commands::Shutdown);
     })
     .expect("Error setting Ctrl-C handler");
 
-    let ipc_tx = tx.clone();
-    if let Err(e) = ipc::setup_ipc(ipc_tx) {
+    if let Err(e) = ipc::setup_ipc(tx.clone()) {
         error!("Failed to start IPC server: {e:#?}");
         return;
     }
