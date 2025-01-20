@@ -1,13 +1,36 @@
-use crate::utils::get_config_file;
 use directories::UserDirs;
-use log::{warn, LevelFilter};
+use log::{debug, warn, LevelFilter};
+use notify::{RecommendedWatcher, Watcher};
 use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
     fmt::{self, Display},
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::mpsc::{self, Sender},
+    thread,
+    time::Duration,
 };
+
+use crate::{commands::Commands, utils::get_config_file};
+
+const DEFAULT_BEZIER: [f32; 4] = [0.4, 0.0, 0.6, 1.0];
+const DEFAULT_DEBUG: &str = "info";
+const DEFAULT_DURATION: f64 = 1.0;
+const DEFAULT_DYNAMIC_DURATION: bool = true;
+const DEFAULT_INTERVAL: u64 = 300;
+const DEFAULT_FILL: &str = "000000";
+const DEFAULT_FILTER: &str = "Lanczos3";
+const DEFAULT_FLAVOUR: [&str; 4] = ["wipe", "wave", "grow", "outer"];
+// Maybe try to figure out a way to get refresh rate and use that by default
+const DEFAULT_FPS: u32 = 60;
+const DEFAULT_RESIZE: &str = "crop";
+const DEFAULT_SHUFFLE: bool = true;
+const DEFAULT_STEP: u8 = 60;
+const DEFAULT_SWW_PATH: &str = "/usr/bin/swww";
+const DEFAULT_WALLPAPER_DIR: &str = "Wallpapers";
+const DEFAULT_WAVE_SIZE: (i32, i32, i32, i32) = (55, 60, 45, 50);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
@@ -53,15 +76,20 @@ impl Default for Config {
 impl Default for General {
     fn default() -> Self {
         let wallpaper_path = UserDirs::new()
-            .map(|user_dirs| user_dirs.picture_dir().unwrap().to_path_buf())
+            .map(|user_dirs| {
+                user_dirs
+                    .picture_dir()
+                    .expect("Failed to get Picture dir")
+                    .to_path_buf()
+            })
             .unwrap()
-            .join("Wallpapers");
+            .join(DEFAULT_WALLPAPER_DIR);
 
         General {
-            debug: Some(String::from("info")),
-            interval: Some(300),
-            shuffle: Some(true),
-            swww_path: Some(String::from("/usr/bin/swww")),
+            debug: Some(DEFAULT_DEBUG.into()),
+            interval: Some(DEFAULT_INTERVAL),
+            shuffle: Some(DEFAULT_SHUFFLE),
+            swww_path: Some(DEFAULT_SWW_PATH.into()),
             wallpaper_path: Some(wallpaper_path),
         }
     }
@@ -70,25 +98,27 @@ impl Default for General {
 impl Default for Transition {
     fn default() -> Self {
         Transition {
-            bezier: Some([0.40, 0.0, 0.6, 1.0]),
-            duration: Some(1.0),
-            dynamic_duration: Some(true),
-            fill: Some(String::from("000000")),
-            filter: Some(String::from("Lanczos3")),
-            flavour: Some(vec![
-                "wipe".into(),
-                "wave".into(),
-                "grow".into(),
-                "outer".into(),
-            ]),
-            fps: Some(60),
-            resize: Some(String::from("crop")),
-            step: Some(60),
-            wave_size: Some((55, 60, 45, 50)),
+            bezier: Some(DEFAULT_BEZIER),
+            duration: Some(DEFAULT_DURATION),
+            dynamic_duration: Some(DEFAULT_DYNAMIC_DURATION),
+            fill: Some(DEFAULT_FILL.into()),
+            filter: Some(DEFAULT_FILL.into()),
+            flavour: Some(
+                DEFAULT_FLAVOUR
+                    .into_iter()
+                    .map(|str| str.to_string())
+                    .collect(),
+            ),
+            fps: Some(DEFAULT_FPS),
+            resize: Some(DEFAULT_RESIZE.into()),
+            step: Some(DEFAULT_STEP),
+            wave_size: Some(DEFAULT_WAVE_SIZE),
         }
     }
 }
 
+// FIX: I think there could be a bug with dereferncing here, so if things seem right but printing
+// the config seems to tell you something else, it's probably something wrong in here
 impl Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "\nCurrent configuration")?;
@@ -195,29 +225,218 @@ impl Config {
         Ok(config)
     }
 
-    pub fn get_debug_level(&self) -> LevelFilter {
-        match self
-            .clone()
-            .general
-            .unwrap_or_default()
-            .debug
-            .unwrap_or_default()
-            .to_lowercase()
-            .as_str()
-        {
-            "off" | "0" => LevelFilter::Off,
-            "error" | "1" => LevelFilter::Error,
-            "warn" | "2" => LevelFilter::Warn,
-            "info" | "3" => LevelFilter::Info,
-            "debug" | "4" => LevelFilter::Debug,
-            "trace" | "5" => LevelFilter::Trace,
-            _ => {
+    pub fn watch<P: AsRef<Path>>(path: P, cmd_tx: Sender<Commands>) -> notify::Result<()> {
+        debug!("Starting watcher...");
+        let (tx, rx) = mpsc::channel();
+        let mut watcher = RecommendedWatcher::new(
+            tx,
+            notify::Config::default()
+                .with_compare_contents(true)
+                .with_poll_interval(Duration::from_secs(1)),
+        )?;
+
+        let abs_path = fs::canonicalize(path.as_ref())?;
+
+        watcher.watch(abs_path.as_ref(), notify::RecursiveMode::NonRecursive)?;
+
+        thread::spawn(move || -> notify::Result<()> {
+            let mut watcher = watcher;
+
+            while let Ok(event_res) = rx.recv() {
+                match event_res {
+                    Ok(event) => {
+                        debug!("File event: {event:?}");
+                        if event.kind.is_modify() || event.kind.is_remove() {
+                            cmd_tx.send(Commands::Reload).unwrap();
+
+                            if event.kind.is_remove() {
+                                debug!("File removed, trying to re-establish watch");
+                                thread::sleep(Duration::from_millis(200));
+                                watcher.watch(
+                                    abs_path.as_ref(),
+                                    notify::RecursiveMode::NonRecursive,
+                                )?;
+                            }
+                        }
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            warn!("Watcher thread stopping");
+            Ok(())
+        });
+
+        Ok(())
+    }
+
+    pub fn general(&self) -> General {
+        self.general.clone().unwrap_or_default()
+    }
+
+    pub fn transition(&self) -> Transition {
+        self.transition.clone().unwrap_or_default()
+    }
+
+    pub fn bezier(&self) -> [f32; 4] {
+        self.transition().bezier()
+    }
+
+    pub fn debug(&self) -> LevelFilter {
+        self.general().debug()
+    }
+
+    pub fn duration(&self) -> f64 {
+        self.transition().duration()
+    }
+
+    pub fn dynamic_duration(&self) -> bool {
+        self.transition().dynamic_duration()
+    }
+
+    pub fn fill(&self) -> String {
+        self.transition().fill()
+    }
+
+    pub fn filter(&self) -> String {
+        self.transition().filter()
+    }
+
+    pub fn flavour(&self) -> Vec<TransitionFlavour> {
+        self.transition().flavour()
+    }
+
+    pub fn fps(&self) -> u32 {
+        self.transition().fps()
+    }
+
+    pub fn interval(&self) -> u64 {
+        self.general().interval()
+    }
+
+    pub fn resize(&self) -> String {
+        self.transition().resize()
+    }
+
+    pub fn shuffle(&self) -> bool {
+        self.general().shuffle()
+    }
+
+    pub fn step(&self) -> u8 {
+        self.transition().step()
+    }
+
+    pub fn swww_path(&self) -> String {
+        self.general().swww_path()
+    }
+
+    pub fn wallpaper_path(&self) -> PathBuf {
+        self.general().wallpaper_path()
+    }
+
+    pub fn wave_size(&self) -> (i32, i32, i32, i32) {
+        self.transition().wave_size()
+    }
+}
+
+impl General {
+    pub fn debug(&self) -> LevelFilter {
+        match LevelFilter::from_str(
+            self.debug
+                .as_deref()
+                .unwrap_or(DEFAULT_DEBUG)
+                .to_lowercase()
+                .as_str(),
+        ) {
+            Ok(dbglvl) => dbglvl,
+            Err(_) => {
                 warn!("Unknown debug option in config, falling back to default.");
                 LevelFilter::Info
             }
         }
     }
+
+    pub fn interval(&self) -> u64 {
+        self.interval.unwrap_or_default()
+    }
+
+    pub fn shuffle(&self) -> bool {
+        self.shuffle.unwrap_or_default()
+    }
+
+    pub fn swww_path(&self) -> String {
+        self.swww_path.as_deref().unwrap_or(DEFAULT_SWW_PATH).into()
+    }
+
+    pub fn wallpaper_path(&self) -> PathBuf {
+        self.wallpaper_path.clone().unwrap_or_default()
+    }
 }
+
+impl Transition {
+    pub fn bezier(&self) -> [f32; 4] {
+        self.bezier.unwrap_or_default()
+    }
+
+    pub fn duration(&self) -> f64 {
+        self.duration.unwrap_or_default()
+    }
+
+    pub fn dynamic_duration(&self) -> bool {
+        self.dynamic_duration.unwrap_or_default()
+    }
+
+    pub fn fill(&self) -> String {
+        self.fill.as_deref().unwrap_or(DEFAULT_FILL).into()
+    }
+
+    pub fn filter(&self) -> String {
+        self.filter.as_deref().unwrap_or(DEFAULT_FILTER).into()
+    }
+
+    pub fn flavour(&self) -> Vec<TransitionFlavour> {
+        let fvec = self.flavour.clone().unwrap_or_default();
+        fvec.into_iter()
+            .filter_map(|s| match TransitionFlavour::from_str(s.as_str()) {
+                Ok(flavour) => Some(flavour),
+                Err(e) => {
+                    warn!("Invalid transition type: '{s}': {e}");
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn fps(&self) -> u32 {
+        self.fps.unwrap_or_default()
+    }
+
+    pub fn resize(&self) -> String {
+        self.resize.as_deref().unwrap_or(DEFAULT_RESIZE).into()
+    }
+
+    pub fn step(&self) -> u8 {
+        self.step.unwrap_or_default()
+    }
+
+    pub fn wave_size(&self) -> (i32, i32, i32, i32) {
+        self.wave_size.unwrap_or_default()
+    }
+}
+
+#[derive(Debug)]
+pub enum ParseTransitionFlavourError {
+    InvalidFlavour(String),
+}
+
+impl Display for ParseTransitionFlavourError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidFlavour(s) => write!(f, "Invalid transition type: {}", s),
+        }
+    }
+}
+
+impl Error for ParseTransitionFlavourError {}
 
 #[derive(Clone, Debug)]
 pub enum TransitionFlavour {
@@ -227,16 +446,27 @@ pub enum TransitionFlavour {
     Outer,
 }
 
-impl TryFrom<&str> for TransitionFlavour {
-    type Error = &'static str;
+impl FromStr for TransitionFlavour {
+    type Err = ParseTransitionFlavourError;
 
-    fn try_from(flavour: &str) -> Result<Self, Self::Error> {
-        match flavour.to_lowercase().as_str() {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
             "wipe" => Ok(Self::Wipe),
             "wave" => Ok(Self::Wave),
             "grow" => Ok(Self::Grow),
             "outer" => Ok(Self::Outer),
-            &_ => Err("Transition type does not exist"),
+            _ => Err(Self::Err::InvalidFlavour(s.to_string())),
         }
+    }
+}
+
+impl Display for TransitionFlavour {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Wipe => "wipe",
+            Self::Wave => "wave",
+            Self::Grow => "grow",
+            Self::Outer => "outer",
+        })
     }
 }

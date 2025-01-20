@@ -10,7 +10,7 @@ ctrlc = { version = "3.4.5", features = ["termination"] }
 directories = "5.0.1"
 log = "0.4.22"
 notify = "7.0.0"
-rand = "0.8.5"
+rand = { version = "0.8.5", features = ["small_rng"] }
 serde = { version = "1.0.204", features = ["derive"] }
 simplelog = "0.12.2"
 tempfile = "3.12.0"

@@ -8,7 +8,7 @@ use walrus::{
     config::Config,
     daemon::Daemon,
     ipc::{self, send_ipc_command},
-    utils::{self, get_config_file, init_logger},
+    utils::{get_config_file, init_logger},
 };
 
 fn main() {
@@ -57,8 +57,8 @@ fn main() {
     init_logger(LevelFilter::Trace).unwrap_or_else(|e| {
         eprintln!("Failed to initialize logger: {e}\nContinuing without loggging...");
     });
-    log::set_max_level(config.get_debug_level());
-    debug!("Logging with log level: {}", config.get_debug_level());
+    log::set_max_level(config.debug());
+    debug!("Logging with log level: {}", config.debug());
 
     let mut walrus = Daemon::new(config).expect("Fatal: failed to initialize Walrus Daemon");
     if walrus.queue.is_empty() {
@@ -68,7 +68,7 @@ fn main() {
 
     let (tx, rx) = mpsc::channel();
 
-    utils::watch(get_config_file("config.toml"), tx.clone()).expect("Error watching config.toml");
+    Config::watch(get_config_file("config.toml"), tx.clone()).expect("Error watching config.toml");
 
     let ctrlc_tx = tx.clone();
     ctrlc::set_handler(move || {
