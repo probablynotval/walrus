@@ -34,13 +34,13 @@ fn test_transition_vars() -> Result<(), Box<dyn Error>> {
 
     let env_duration =
         env::var("SWWW_TRANSITION_DURATION").expect("Failed to read duration environment variable");
-    let duration_from_config = normalize_duration(daemon.config.duration(), 2560.0, 1440.0, 360.0);
+    let duration_from_config = normalize_duration(daemon.config.duration(), 2560, 1440, 360.0);
     assert_eq!(env_duration, duration_from_config.to_string());
     let _ = tx.send(Commands::Next);
 
     let env_duration =
         env::var("SWWW_TRANSITION_DURATION").expect("Failed to read duration environment variable");
-    let duration_from_config = normalize_duration(daemon.config.duration(), 2560.0, 1440.0, 360.0);
+    let duration_from_config = normalize_duration(daemon.config.duration(), 2560, 1440, 360.0);
     assert_eq!(env_duration, duration_from_config.to_string());
     let _ = tx.send(Commands::Next);
 

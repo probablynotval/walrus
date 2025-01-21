@@ -15,7 +15,7 @@ use crate::{
     commands::Commands,
     config::{Config, TransitionFlavour},
     ipc::send_ipc_command,
-    utils::{decrement_index, increment_index, normalize_duration, SCREENWH, SOCKET_PATH},
+    utils::{decrement_index, increment_index, normalize_duration, SOCKET_PATH},
 };
 
 pub struct Daemon {
@@ -29,7 +29,7 @@ pub struct Daemon {
 
 impl Daemon {
     pub fn new(config: Config) -> Option<Self> {
-        let directory = config.general().wallpaper_path();
+        let directory = config.wallpaper_path();
         let walker = WalkDir::new(directory);
         let queue: Vec<String> = walker
             .follow_links(true)
@@ -62,6 +62,7 @@ impl Daemon {
         while cont {
             let interval = self.config.interval();
             let timeout = Duration::from_secs(interval);
+
             match rx.recv_timeout(timeout) {
                 Ok(Commands::Config) => unreachable!(),
                 Ok(Commands::Next) => {
@@ -80,7 +81,13 @@ impl Daemon {
                     debug!("Received Resume command");
                     self.resume();
                 }
+                /*
+                 * Reload command is automatically called from Config::watch(). It is called on
+                 * every modification event, including file removal. In the case of file removal
+                 * the watcher checks whether a new file can be found.
+                 */
                 Ok(Commands::Reload) => {
+                    debug!("Received Reload command");
                     self.reload_config();
                 }
                 Ok(Commands::Shutdown) => {
@@ -98,6 +105,10 @@ impl Daemon {
                     }
                     debug!("Timeout: paused, not changing wallpapers");
                 }
+                /*
+                 * Unsure when this can happen. One such case is if there is an instance of walrus
+                 * already running and another one is started.
+                 */
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     error!("Timeout: channel disconnected");
                     cont = false;
@@ -135,6 +146,8 @@ impl Daemon {
         env::set_var("SWWW_TRANSITION", flavour_selection.to_string());
         debug!("Flavour: {}", flavour_selection.to_string());
 
+        let resolution = self.config.resolution();
+
         match flavour_selection {
             TransitionFlavour::Wipe => {
                 let angle = self.rng.gen_range(0.0..360.0);
@@ -143,12 +156,8 @@ impl Daemon {
                 env::set_var("SWWW_TRANSITION_ANGLE", angle.to_string());
 
                 if self.config.dynamic_duration() {
-                    // FIX: so there's two approaches to getting the correct screen dimensions.
-                    // 1. try to derive this automatically, although it might not be robust and
-                    //    has the potential to be complicated?
-                    // 2. just make another configuration option and be done with it lol
                     let normalized_duration =
-                        normalize_duration(duration, SCREENWH.0, SCREENWH.1, angle);
+                        normalize_duration(duration, resolution.width, resolution.height, angle);
                     debug!("Dynamic duration: {normalized_duration}");
                     env::set_var("SWWW_TRANSITION_DURATION", normalized_duration.to_string());
                 } else {
@@ -160,14 +169,14 @@ impl Daemon {
             }
             TransitionFlavour::Wave => {
                 let angle = self.rng.gen_range(0.0..360.0);
-                debug!("Angle: {angle}");
+                debug!("ActualAngle: {angle}");
                 let angle_string = ((360.0 + angle - 90.0) % 360.0).to_string();
-                debug!("AngleString: {angle_string}");
+                debug!("FakeAngle: {angle_string}");
                 env::set_var("SWWW_TRANSITION_ANGLE", angle_string);
 
                 if self.config.dynamic_duration() {
                     let normalized_duration =
-                        normalize_duration(duration, SCREENWH.0, SCREENWH.1, angle);
+                        normalize_duration(duration, resolution.width, resolution.height, angle);
                     debug!("Dynamic duration: {normalized_duration}");
                     env::set_var("SWWW_TRANSITION_DURATION", normalized_duration.to_string());
                 } else {
@@ -257,12 +266,15 @@ impl Daemon {
             .wait();
     }
 
+    // NOTE:
+    // Printing debug information from this function can be confusing because it might be called
+    // multiple times. The reason is because the watcher polls and calls this function every time
+    // it does that. For example Neovim uses atomic file writing, but other editors might do this
+    // differently so the debug information depends on how the file is edited.
     fn reload_config(&mut self) {
         info!("Reloading config...");
-        debug!("Old config: {:#?}", self.config);
         let config = Config::new(None).unwrap_or_default();
         self.config = config;
-        debug!("New config: {:#?}", self.config);
         log::set_max_level(self.config.debug());
     }
 
@@ -318,8 +330,8 @@ mod tests {
 
             let conf_duration = normalize_duration(
                 daemon.config.duration(),
-                SCREENWH.0,
-                SCREENWH.1,
+                daemon.config.resolution().width,
+                daemon.config.resolution().height,
                 daemon.angle.unwrap(),
             );
             let env_duration = env::var("TRANSITION_DURATION").unwrap();
@@ -328,8 +340,8 @@ mod tests {
 
             let conf_duration = normalize_duration(
                 daemon.config.duration(),
-                SCREENWH.0,
-                SCREENWH.1,
+                daemon.config.resolution().width,
+                daemon.config.resolution().height,
                 daemon.angle.unwrap(),
             );
             let env_duration = env::var("TRANSITION_DURATION").unwrap();
@@ -338,8 +350,8 @@ mod tests {
             let _ = tx.send(Commands::Next);
             let conf_duration = normalize_duration(
                 daemon.config.duration(),
-                SCREENWH.0,
-                SCREENWH.1,
+                daemon.config.resolution().width,
+                daemon.config.resolution().height,
                 daemon.angle.unwrap(),
             );
             let env_duration = env::var("TRANSITION_DURATION").unwrap();

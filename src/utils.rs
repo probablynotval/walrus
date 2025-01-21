@@ -1,16 +1,19 @@
 use chrono::{DurationRound, Local, TimeDelta};
 use directories::BaseDirs;
 use log::{debug, LevelFilter};
+use serde::{Deserialize, Deserializer};
 use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger};
 use std::{
     error::Error,
     fs::{self, File},
     path::{Path, PathBuf},
+    str::FromStr,
 };
+
+use crate::config::TransitionFlavour;
 
 pub const APPNAME: &str = "walrus";
 pub const SOCKET_PATH: &str = "/tmp/walrus.sock";
-pub const SCREENWH: (f64, f64) = (2560.0, 1440.0);
 
 fn get_appdata_dir<P: AsRef<Path>>(path: P) -> PathBuf {
     let base_dir =
@@ -55,7 +58,10 @@ pub fn init_logger(log_level: LevelFilter) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn normalize_duration(base_duration: f64, width: f64, height: f64, angle_degrees: f64) -> f64 {
+pub fn normalize_duration(base_duration: f64, width: u32, height: u32, angle_degrees: f64) -> f64 {
+    let width = f64::from(width);
+    let height = f64::from(height);
+
     let theta = angle_degrees.to_radians();
     let distance_at_angle = (width * theta.cos().abs()) + (height * theta.sin().abs());
     debug!("DistAtAngle: {distance_at_angle}");
@@ -70,4 +76,25 @@ pub fn decrement_index(index: usize, qlen: usize) -> usize {
 
 pub fn increment_index(index: usize, qlen: usize) -> usize {
     (index + 1) % qlen
+}
+
+pub fn deserialize_flavour<'de, D>(d: D) -> Result<Option<Vec<TransitionFlavour>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let flavours: Option<Vec<String>> = Option::deserialize(d)?;
+
+    match flavours {
+        Some(flavours) => {
+            let result: Result<Vec<TransitionFlavour>, D::Error> = flavours
+                .into_iter()
+                .map(|flavour| {
+                    TransitionFlavour::from_str(&flavour.to_lowercase())
+                        .map_err(serde::de::Error::custom)
+                })
+                .collect();
+            result.map(Some)
+        }
+        None => Ok(None),
+    }
 }

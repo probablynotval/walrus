@@ -39,6 +39,7 @@ The following are the default configuration values. The configuration file is lo
 [general]
 debug = "info"
 interval = 300
+resolution = { width = 1920, height = 1080 }
 shuffle = true
 swww_path = "/usr/bin/swww"
 wallpaper_path = "~/Pictures/Wallpapers"
@@ -46,7 +47,7 @@ wallpaper_path = "~/Pictures/Wallpapers"
 [transition]
 bezier = [0.40, 0.0, 0.6, 1.0]
 duration = 1.0
-dynamic_duration = true             # Changes the transition duration based on pixels travelled
+dynamic_duration = true # Changes the transition duration based on pixels travelled
 fill = "000000"
 filter = "Lanczos3"
 flavour = ["wipe", "wave", "grow", "outer"]
@@ -64,6 +65,6 @@ For now build from source.
 ## Roadmap
 - [x] Manual wallpaper cycling (next & previous commands)
 - [x] Configuration options for advanced features (such as min/max wave size & transition bezier)
+- [x] Config hot reloading
 - [ ] Advanced wallpaper scheduling, depending on time of day, etc.
 - [ ] Optionally independent configuration per transition type
-- [ ] Config hot reloading

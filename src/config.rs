@@ -13,7 +13,11 @@ use std::{
     time::Duration,
 };
 
-use crate::{commands::Commands, utils::get_config_file};
+use crate::{
+    commands::Commands,
+    error::ParseTransitionFlavourError,
+    utils::{deserialize_flavour, get_config_file},
+};
 
 const DEFAULT_BEZIER: [f32; 4] = [0.4, 0.0, 0.6, 1.0];
 const DEFAULT_DEBUG: &str = "info";
@@ -22,34 +26,44 @@ const DEFAULT_DYNAMIC_DURATION: bool = true;
 const DEFAULT_INTERVAL: u64 = 300;
 const DEFAULT_FILL: &str = "000000";
 const DEFAULT_FILTER: &str = "Lanczos3";
-const DEFAULT_FLAVOUR: [&str; 4] = ["wipe", "wave", "grow", "outer"];
-// Maybe try to figure out a way to get refresh rate and use that by default
+const DEFAULT_FLAVOUR: [TransitionFlavour; 4] = [
+    TransitionFlavour::Wipe,
+    TransitionFlavour::Wave,
+    TransitionFlavour::Grow,
+    TransitionFlavour::Outer,
+];
+// TODO: Maybe try to figure out a way to get refresh rate and use that by default
 const DEFAULT_FPS: u32 = 60;
 const DEFAULT_RESIZE: &str = "crop";
+const DEFAULT_RESOLUTION: Resolution = Resolution {
+    width: 1920,
+    height: 1080,
+};
 const DEFAULT_SHUFFLE: bool = true;
 const DEFAULT_STEP: u8 = 60;
 const DEFAULT_SWW_PATH: &str = "/usr/bin/swww";
 const DEFAULT_WALLPAPER_DIR: &str = "Wallpapers";
 const DEFAULT_WAVE_SIZE: (i32, i32, i32, i32) = (55, 60, 45, 50);
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
     pub general: Option<General>,
     pub transition: Option<Transition>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct General {
     pub debug: Option<String>,
     pub interval: Option<u64>,
+    pub resolution: Option<Resolution>,
     pub shuffle: Option<bool>,
     pub swww_path: Option<String>,
     pub wallpaper_path: Option<PathBuf>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Transition {
     pub bezier: Option<[f32; 4]>,
@@ -57,11 +71,26 @@ pub struct Transition {
     pub dynamic_duration: Option<bool>,
     pub fill: Option<String>,
     pub filter: Option<String>,
-    pub flavour: Option<Vec<String>>,
+    #[serde(deserialize_with = "deserialize_flavour")]
+    pub flavour: Option<Vec<TransitionFlavour>>,
     pub fps: Option<u32>,
     pub resize: Option<String>,
     pub step: Option<u8>,
     pub wave_size: Option<(i32, i32, i32, i32)>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub struct Resolution {
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum TransitionFlavour {
+    Wipe,
+    Wave,
+    Grow,
+    Outer,
 }
 
 impl Default for Config {
@@ -88,6 +117,7 @@ impl Default for General {
         General {
             debug: Some(DEFAULT_DEBUG.into()),
             interval: Some(DEFAULT_INTERVAL),
+            resolution: Some(DEFAULT_RESOLUTION),
             shuffle: Some(DEFAULT_SHUFFLE),
             swww_path: Some(DEFAULT_SWW_PATH.into()),
             wallpaper_path: Some(wallpaper_path),
@@ -103,12 +133,7 @@ impl Default for Transition {
             dynamic_duration: Some(DEFAULT_DYNAMIC_DURATION),
             fill: Some(DEFAULT_FILL.into()),
             filter: Some(DEFAULT_FILL.into()),
-            flavour: Some(
-                DEFAULT_FLAVOUR
-                    .into_iter()
-                    .map(|str| str.to_string())
-                    .collect(),
-            ),
+            flavour: Some(DEFAULT_FLAVOUR.into()),
             fps: Some(DEFAULT_FPS),
             resize: Some(DEFAULT_RESIZE.into()),
             step: Some(DEFAULT_STEP),
@@ -117,8 +142,6 @@ impl Default for Transition {
     }
 }
 
-// FIX: I think there could be a bug with dereferncing here, so if things seem right but printing
-// the config seems to tell you something else, it's probably something wrong in here
 impl Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "\nCurrent configuration")?;
@@ -139,6 +162,12 @@ impl Display for General {
             self.interval
                 .map(|x| x.to_string())
                 .unwrap_or_else(|| "None".into())
+        )?;
+        let resolution = self.resolution.as_ref().unwrap();
+        writeln!(
+            f,
+            "resolution = {{ width = {}, height = {} }}",
+            resolution.width, resolution.height
         )?;
         writeln!(
             f,
@@ -183,10 +212,15 @@ impl Display for Transition {
         )?;
         writeln!(f, "fill = {}", self.fill.as_deref().unwrap_or("None"))?;
         writeln!(f, "filter = {}", self.filter.as_deref().unwrap_or("None"))?;
-        if let Some(flavour) = &self.flavour {
-            let flavours = flavour.join(", ");
-            writeln!(f, "flavour = [{}]", flavours)?;
-        }
+        let flavour_str = self
+            .flavour
+            .clone()
+            .unwrap_or(DEFAULT_FLAVOUR.into())
+            .iter()
+            .map(|f| f.to_string())
+            .collect::<Vec<String>>()
+            .join(", ");
+        writeln!(f, "flavour = [{}]", flavour_str)?;
         writeln!(
             f,
             "fps = {}",
@@ -208,6 +242,31 @@ impl Display for Transition {
             "wave_size = [{}, {}, {}, {}]",
             wave_size.0, wave_size.1, wave_size.2, wave_size.3,
         )
+    }
+}
+
+impl FromStr for TransitionFlavour {
+    type Err = ParseTransitionFlavourError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "wipe" => Ok(Self::Wipe),
+            "wave" => Ok(Self::Wave),
+            "grow" => Ok(Self::Grow),
+            "outer" => Ok(Self::Outer),
+            _ => Err(Self::Err::InvalidFlavour(s.to_string())),
+        }
+    }
+}
+
+impl Display for TransitionFlavour {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Wipe => "wipe",
+            Self::Wave => "wave",
+            Self::Grow => "grow",
+            Self::Outer => "outer",
+        })
     }
 }
 
@@ -262,7 +321,7 @@ impl Config {
                     Err(e) => return Err(e),
                 }
             }
-            warn!("Watcher thread stopping");
+            warn!("Watcher thread stopping; config hot reload stopped");
             Ok(())
         });
 
@@ -317,6 +376,10 @@ impl Config {
         self.transition().resize()
     }
 
+    pub fn resolution(&self) -> Resolution {
+        self.general().resolution()
+    }
+
     pub fn shuffle(&self) -> bool {
         self.general().shuffle()
     }
@@ -356,11 +419,15 @@ impl General {
     }
 
     pub fn interval(&self) -> u64 {
-        self.interval.unwrap_or_default()
+        self.interval.unwrap_or(DEFAULT_INTERVAL)
+    }
+
+    pub fn resolution(&self) -> Resolution {
+        self.resolution.unwrap_or(DEFAULT_RESOLUTION)
     }
 
     pub fn shuffle(&self) -> bool {
-        self.shuffle.unwrap_or_default()
+        self.shuffle.unwrap_or(DEFAULT_SHUFFLE)
     }
 
     pub fn swww_path(&self) -> String {
@@ -374,15 +441,15 @@ impl General {
 
 impl Transition {
     pub fn bezier(&self) -> [f32; 4] {
-        self.bezier.unwrap_or_default()
+        self.bezier.unwrap_or(DEFAULT_BEZIER)
     }
 
     pub fn duration(&self) -> f64 {
-        self.duration.unwrap_or_default()
+        self.duration.unwrap_or(DEFAULT_DURATION)
     }
 
     pub fn dynamic_duration(&self) -> bool {
-        self.dynamic_duration.unwrap_or_default()
+        self.dynamic_duration.unwrap_or(DEFAULT_DYNAMIC_DURATION)
     }
 
     pub fn fill(&self) -> String {
@@ -394,20 +461,11 @@ impl Transition {
     }
 
     pub fn flavour(&self) -> Vec<TransitionFlavour> {
-        let fvec = self.flavour.clone().unwrap_or_default();
-        fvec.into_iter()
-            .filter_map(|s| match TransitionFlavour::from_str(s.as_str()) {
-                Ok(flavour) => Some(flavour),
-                Err(e) => {
-                    warn!("Invalid transition type: '{s}': {e}");
-                    None
-                }
-            })
-            .collect()
+        self.flavour.clone().unwrap_or(DEFAULT_FLAVOUR.into())
     }
 
     pub fn fps(&self) -> u32 {
-        self.fps.unwrap_or_default()
+        self.fps.unwrap_or(DEFAULT_FPS)
     }
 
     pub fn resize(&self) -> String {
@@ -415,58 +473,10 @@ impl Transition {
     }
 
     pub fn step(&self) -> u8 {
-        self.step.unwrap_or_default()
+        self.step.unwrap_or(DEFAULT_STEP)
     }
 
     pub fn wave_size(&self) -> (i32, i32, i32, i32) {
-        self.wave_size.unwrap_or_default()
-    }
-}
-
-#[derive(Debug)]
-pub enum ParseTransitionFlavourError {
-    InvalidFlavour(String),
-}
-
-impl Display for ParseTransitionFlavourError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidFlavour(s) => write!(f, "Invalid transition type: {}", s),
-        }
-    }
-}
-
-impl Error for ParseTransitionFlavourError {}
-
-#[derive(Clone, Debug)]
-pub enum TransitionFlavour {
-    Wipe,
-    Wave,
-    Grow,
-    Outer,
-}
-
-impl FromStr for TransitionFlavour {
-    type Err = ParseTransitionFlavourError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "wipe" => Ok(Self::Wipe),
-            "wave" => Ok(Self::Wave),
-            "grow" => Ok(Self::Grow),
-            "outer" => Ok(Self::Outer),
-            _ => Err(Self::Err::InvalidFlavour(s.to_string())),
-        }
-    }
-}
-
-impl Display for TransitionFlavour {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Wipe => "wipe",
-            Self::Wave => "wave",
-            Self::Grow => "grow",
-            Self::Outer => "outer",
-        })
+        self.wave_size.unwrap_or(DEFAULT_WAVE_SIZE)
     }
 }

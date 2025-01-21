@@ -12,6 +12,11 @@ use walrus::{
 };
 
 fn main() {
+    init_logger(LevelFilter::Trace).unwrap_or_else(|e| {
+        eprintln!("Failed to initialize logger: {e}\nContinuing without loggging...");
+    });
+    log::set_max_level(LevelFilter::Info);
+
     let config = Config::new(None).unwrap_or_default();
 
     let cli = Cli::parse();
@@ -54,9 +59,6 @@ fn main() {
         }
     }
 
-    init_logger(LevelFilter::Trace).unwrap_or_else(|e| {
-        eprintln!("Failed to initialize logger: {e}\nContinuing without loggging...");
-    });
     log::set_max_level(config.debug());
     debug!("Logging with log level: {}", config.debug());
 
