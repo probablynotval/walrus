@@ -10,7 +10,7 @@ use std::{
     str::FromStr,
 };
 
-use crate::config::TransitionFlavour;
+use crate::config::{Resolution, TransitionFlavour};
 
 pub const APPNAME: &str = "walrus";
 pub const SOCKET_PATH: &str = "/tmp/walrus.sock";
@@ -58,9 +58,9 @@ pub fn init_logger(log_level: LevelFilter) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn normalize_duration(base_duration: f64, width: u32, height: u32, angle_degrees: f64) -> f64 {
-    let width = f64::from(width);
-    let height = f64::from(height);
+pub fn normalize_duration(base_duration: f64, res: Resolution, angle_degrees: f64) -> f64 {
+    let width = f64::from(res.width);
+    let height = f64::from(res.height);
 
     let theta = angle_degrees.to_radians();
     let distance_at_angle = (width * theta.cos().abs()) + (height * theta.sin().abs());

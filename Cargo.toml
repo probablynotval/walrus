@@ -13,6 +13,8 @@ notify = "7.0.0"
 rand = { version = "0.8.5", features = ["small_rng"] }
 serde = { version = "1.0.204", features = ["derive"] }
 simplelog = "0.12.2"
+smithay-client-toolkit = "0.19.2"
 tempfile = "3.12.0"
 toml = "0.8.19"
 walkdir = "2.5.0"
+wayland-client = "0.31.7"

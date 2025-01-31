@@ -39,7 +39,7 @@ The following are the default configuration values. The configuration file is lo
 [general]
 debug = "info"
 interval = 300
-resolution = { width = 1920, height = 1080 }
+resolution = { width = x, height = y } # Automatically inferred, but possible to configure. Used for dynamic duration.
 shuffle = true
 swww_path = "/usr/bin/swww"
 wallpaper_path = "~/Pictures/Wallpapers"
@@ -47,11 +47,11 @@ wallpaper_path = "~/Pictures/Wallpapers"
 [transition]
 bezier = [0.40, 0.0, 0.6, 1.0]
 duration = 1.0
-dynamic_duration = true # Changes the transition duration based on pixels travelled
+dynamic_duration = true # Changes the transition duration based on pixels travelled.
 fill = "000000"
 filter = "Lanczos3"
 flavour = ["wipe", "wave", "grow", "outer"]
-fps = 60
+fps = refresh_rate # Automatically inferred based on highest refresh rate monitor.
 resize = "crop"
 step = 60
 wave_size = [55, 60, 45, 50]

@@ -4,3 +4,4 @@ pub mod daemon;
 pub mod error;
 pub mod ipc;
 pub mod utils;
+pub mod wayland;

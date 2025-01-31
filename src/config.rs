@@ -17,6 +17,7 @@ use crate::{
     commands::Commands,
     error::ParseTransitionFlavourError,
     utils::{deserialize_flavour, get_config_file},
+    wayland::WaylandHandle,
 };
 
 const DEFAULT_BEZIER: [f32; 4] = [0.4, 0.0, 0.6, 1.0];
@@ -32,20 +33,20 @@ const DEFAULT_FLAVOUR: [TransitionFlavour; 4] = [
     TransitionFlavour::Grow,
     TransitionFlavour::Outer,
 ];
-// TODO: Maybe try to figure out a way to get refresh rate and use that by default
-const DEFAULT_FPS: u32 = 60;
 const DEFAULT_RESIZE: &str = "crop";
-const DEFAULT_RESOLUTION: Resolution = Resolution {
-    width: 1920,
-    height: 1080,
-};
 const DEFAULT_SHUFFLE: bool = true;
 const DEFAULT_STEP: u8 = 60;
 const DEFAULT_SWW_PATH: &str = "/usr/bin/swww";
 const DEFAULT_WALLPAPER_DIR: &str = "Wallpapers";
 const DEFAULT_WAVE_SIZE: (i32, i32, i32, i32) = (55, 60, 45, 50);
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+const FALLBACK_FPS: u32 = 60;
+const FALLBACK_RESOLUTION: Resolution = Resolution {
+    width: 1920,
+    height: 1080,
+};
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
     pub general: Option<General>,
@@ -79,10 +80,10 @@ pub struct Transition {
     pub wave_size: Option<(i32, i32, i32, i32)>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Resolution {
-    pub width: u32,
-    pub height: u32,
+    pub width: i32,
+    pub height: i32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -117,7 +118,7 @@ impl Default for General {
         General {
             debug: Some(DEFAULT_DEBUG.into()),
             interval: Some(DEFAULT_INTERVAL),
-            resolution: Some(DEFAULT_RESOLUTION),
+            resolution: None,
             shuffle: Some(DEFAULT_SHUFFLE),
             swww_path: Some(DEFAULT_SWW_PATH.into()),
             wallpaper_path: Some(wallpaper_path),
@@ -134,7 +135,7 @@ impl Default for Transition {
             fill: Some(DEFAULT_FILL.into()),
             filter: Some(DEFAULT_FILL.into()),
             flavour: Some(DEFAULT_FLAVOUR.into()),
-            fps: Some(DEFAULT_FPS),
+            fps: None,
             resize: Some(DEFAULT_RESIZE.into()),
             step: Some(DEFAULT_STEP),
             wave_size: Some(DEFAULT_WAVE_SIZE),
@@ -271,17 +272,61 @@ impl Display for TransitionFlavour {
 }
 
 impl Config {
-    pub fn new(optpath: Option<&str>) -> Result<Self, Box<dyn Error>> {
+    pub fn new() -> Result<Self, Box<dyn Error>> {
         let path = get_config_file("config.toml");
-        let config_raw = match optpath {
-            Some(p) => fs::read_to_string(p)?,
-            None => fs::read_to_string(&path)?,
-        };
-        let config: Self = toml::from_str(config_raw.as_str()).unwrap_or_else(|e| {
+        let config_raw = fs::read_to_string(&path)?;
+        Ok(Self::from_str(&config_raw))
+    }
+
+    fn from_str(config_raw: &str) -> Self {
+        let mut config: Self = toml::from_str(config_raw).unwrap_or_else(|e| {
             warn!("Syntax error in config: {e}\nFalling back to defaults...");
             Self::default()
         });
-        Ok(config)
+
+        let (fps, res) = match WaylandHandle::new() {
+            Ok(mut wayland) => {
+                let outputs = wayland.get_outputs();
+                outputs.first().map_or_else(
+                    || {
+                        warn!("No monitors found");
+                        (FALLBACK_FPS, FALLBACK_RESOLUTION)
+                    },
+                    |m| {
+                        let fps = m.refresh_rate.round() as u32;
+                        let res = Resolution {
+                            width: m.resolution.0,
+                            height: m.resolution.1,
+                        };
+                        (fps, res)
+                    },
+                )
+            }
+            Err(e) => {
+                warn!("Failed to connect to Wayland: {e}");
+                (FALLBACK_FPS, FALLBACK_RESOLUTION)
+            }
+        };
+
+        if let Some(general) = &mut config.general {
+            general.resolution.get_or_insert(res);
+        } else {
+            config.general = Some(General {
+                resolution: Some(res),
+                ..General::default()
+            });
+        }
+
+        if let Some(transition) = &mut config.transition {
+            transition.fps.get_or_insert(fps);
+        } else {
+            config.transition = Some(Transition {
+                fps: Some(fps),
+                ..Transition::default()
+            })
+        }
+
+        config
     }
 
     pub fn watch<P: AsRef<Path>>(path: P, cmd_tx: Sender<Commands>) -> notify::Result<()> {
@@ -423,7 +468,7 @@ impl General {
     }
 
     pub fn resolution(&self) -> Resolution {
-        self.resolution.unwrap_or(DEFAULT_RESOLUTION)
+        self.resolution.unwrap_or(FALLBACK_RESOLUTION)
     }
 
     pub fn shuffle(&self) -> bool {
@@ -465,7 +510,7 @@ impl Transition {
     }
 
     pub fn fps(&self) -> u32 {
-        self.fps.unwrap_or(DEFAULT_FPS)
+        self.fps.unwrap_or(FALLBACK_FPS)
     }
 
     pub fn resize(&self) -> String {
@@ -478,5 +523,68 @@ impl Transition {
 
     pub fn wave_size(&self) -> (i32, i32, i32, i32) {
         self.wave_size.unwrap_or(DEFAULT_WAVE_SIZE)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // NOTE: This test picks the monitor with the highest refresh rate. If more than one have the
+    // highest refresh rate, the one with highest resolution will be picked.
+    #[test]
+    fn test_hierarchy() {
+        // This test should assert that the correct values in the hierarchy are used:
+        // User config --> Automatically inferred values (Wayland protocol) --> Fallback defaults
+
+        let toml = r#"
+            [general]
+            resolution = { width = 69, height = 420 }
+
+            [transition]
+            fps = 42069 
+        "#;
+
+        let config = Config::from_str(toml);
+
+        // 1. Assert that user config is used above all else
+        assert_eq!(
+            config.resolution(),
+            Resolution {
+                width: 69,
+                height: 420
+            }
+        );
+        assert_eq!(config.fps(), 42069);
+
+        let config = Config::new().expect("Failed to initialise config");
+
+        let mut wlhandle = WaylandHandle::new().expect("Failed to create handle");
+        let outputs = wlhandle.get_outputs();
+
+        // Pick the monitor with the highest refresh rate
+        // If there is more than one monitor with the highest value pick the highest resolution
+        let monitor = outputs
+            .iter()
+            .max_by(|a, b| {
+                a.refresh_rate.total_cmp(&b.refresh_rate).then_with(|| {
+                    let ap = a.resolution.0 as i64 * a.resolution.1 as i64;
+                    let bp = b.resolution.0 as i64 * b.resolution.1 as i64;
+                    ap.cmp(&bp)
+                })
+            })
+            .expect("Monitor returned empty iterator (no monitor was found)");
+
+        let wl_res = Resolution {
+            width: monitor.resolution.0,
+            height: monitor.resolution.1,
+        };
+        let wl_fps = monitor.refresh_rate.round() as u32;
+
+        // 2. Assert that automatic values are used above fallback values
+        assert_eq!(config.resolution(), wl_res);
+        assert_eq!(config.fps(), wl_fps);
+
+        // 3. After this fallback values would be used...
     }
 }

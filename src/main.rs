@@ -7,17 +7,17 @@ use walrus::{
     commands::{Cli, Commands},
     config::Config,
     daemon::Daemon,
-    ipc::{self, send_ipc_command},
+    ipc,
     utils::{get_config_file, init_logger},
 };
 
 fn main() {
     init_logger(LevelFilter::Trace).unwrap_or_else(|e| {
-        eprintln!("Failed to initialize logger: {e}\nContinuing without loggging...");
+        eprintln!("Failed to initialise logger: {e}\nContinuing without loggging...");
     });
     log::set_max_level(LevelFilter::Info);
 
-    let config = Config::new(None).unwrap_or_default();
+    let config = Config::new().unwrap_or_default();
 
     let cli = Cli::parse();
     if let Some(cmd) = &cli.command {
@@ -28,32 +28,32 @@ fn main() {
             }
             Commands::Next => {
                 debug!("Attempting to send Next command via IPC...");
-                return send_ipc_command(Commands::Next)
+                return ipc::send_ipc_command(Commands::Next)
                     .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
             }
             Commands::Pause => {
                 debug!("Attempting to send Pause command via IPC...");
-                return send_ipc_command(Commands::Pause)
+                return ipc::send_ipc_command(Commands::Pause)
                     .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
             }
             Commands::Previous => {
                 debug!("Attempting to send Previous command via IPC...");
-                return send_ipc_command(Commands::Previous)
+                return ipc::send_ipc_command(Commands::Previous)
                     .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
             }
             Commands::Reload => {
                 debug!("Attempting to send Reload command via IPC...");
-                return send_ipc_command(Commands::Reload)
+                return ipc::send_ipc_command(Commands::Reload)
                     .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
             }
             Commands::Resume => {
                 debug!("Attempting to send Resume command via IPC...");
-                return send_ipc_command(Commands::Resume)
+                return ipc::send_ipc_command(Commands::Resume)
                     .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
             }
             Commands::Shutdown => {
                 debug!("Attempting to send Shutdown command via IPC...");
-                return send_ipc_command(Commands::Shutdown)
+                return ipc::send_ipc_command(Commands::Shutdown)
                     .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
             }
         }
@@ -62,8 +62,8 @@ fn main() {
     log::set_max_level(config.debug());
     debug!("Logging with log level: {}", config.debug());
 
-    let mut walrus = Daemon::new(config).expect("Fatal: failed to initialize Walrus Daemon");
-    if walrus.queue.is_empty() {
+    let mut daemon = Daemon::new(config).expect("Fatal: failed to initialise Walrus Daemon");
+    if daemon.queue.is_empty() {
         error!("Queue is empty, exiting...");
         return;
     }
@@ -82,5 +82,5 @@ fn main() {
         error!("Failed to start IPC server: {e:#?}");
         return;
     }
-    walrus.run(rx);
+    daemon.run(rx);
 }
