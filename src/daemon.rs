@@ -292,9 +292,7 @@ impl Display for Daemon {
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, fs::File, io::Write, sync::mpsc, thread};
-
-    use tempfile::tempdir;
+    use std::{error::Error, sync::mpsc, thread};
 
     use super::*;
 
@@ -302,16 +300,11 @@ mod tests {
     // being set too late, causing the animation to snap instead of starting smoothly
     // I suppose this could be the case, but I kinda doubt it.
     #[test]
-    #[ignore = "needs checking"]
+    #[ignore = "this test hangs"]
     fn test_env_vars() -> Result<(), Box<dyn Error>> {
         println!("running test...");
-        let dir = tempdir()?;
-        let path = dir.path().join("config.toml");
 
-        let mut file = File::create_new(&path)?;
-        writeln!(
-            file,
-            r#"
+        let config_raw = r#"
             [general]
             wallpaper_path = "$HOME/Pictures"
             interval = 60
@@ -319,11 +312,9 @@ mod tests {
 
             [transition]
             fps = 180
-            "#
-        )?;
+            "#;
 
-        // let config = Config::new(Some(path.to_str().unwrap())).unwrap_or_default();
-        let config = Config::new().unwrap_or_default();
+        let config = Config::from_raw(config_raw);
 
         let (tx, rx) = mpsc::channel();
         let mut daemon = Daemon::new(config).unwrap();
@@ -338,6 +329,7 @@ mod tests {
             );
             let env_duration = env::var("TRANSITION_DURATION").unwrap();
             assert_eq!(env_duration, conf_duration.to_string());
+
             let _ = tx.send(Commands::Next);
 
             let conf_duration = normalize_duration(
@@ -349,6 +341,7 @@ mod tests {
             assert_eq!(env_duration, conf_duration.to_string());
 
             let _ = tx.send(Commands::Next);
+
             let conf_duration = normalize_duration(
                 daemon.config.duration(),
                 daemon.config.resolution(),

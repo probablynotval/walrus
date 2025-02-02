@@ -121,6 +121,9 @@ impl IPCClient {
 
 pub fn setup_ipc(tx: Sender<Commands>) -> io::Result<()> {
     debug!("Starting IPC server");
+    // TODO: This socket path should actually be in XDG_RUNTIME_DIR, if I am not mistaken.
+    // Currently it's in /tmp. I should probably use /tmp/walrus/walrus.sock for fallback. Just
+    // remember to cleanup.
     let server = IPCServer::new(String::from(SOCKET_PATH));
     server.start(tx)?;
     Ok(())
@@ -128,6 +131,9 @@ pub fn setup_ipc(tx: Sender<Commands>) -> io::Result<()> {
 
 pub fn send_ipc_command(command: Commands) -> io::Result<()> {
     debug!("IPC sending {:?} command", command);
+    // TODO: This socket path should actually be in XDG_RUNTIME_DIR, if I am not mistaken.
+    // Currently it's in /tmp. I should probably use /tmp/walrus/walrus.sock for fallback. Just
+    // remember to cleanup.
     let client = IPCClient::new(String::from(SOCKET_PATH));
     client.send_command(command)
 }

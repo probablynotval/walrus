@@ -1,5 +1,4 @@
-use directories::UserDirs;
-use log::{debug, warn, LevelFilter};
+use log::{debug, error, warn, LevelFilter};
 use notify::{RecommendedWatcher, Watcher};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -15,8 +14,8 @@ use std::{
 
 use crate::{
     commands::Commands,
-    error::ParseTransitionFlavourError,
-    utils::{deserialize_flavour, get_config_file},
+    error::{DirError, ParseTransitionFlavourError},
+    utils::{self, Dirs},
     wayland::WaylandHandle,
 };
 
@@ -46,7 +45,7 @@ const FALLBACK_RESOLUTION: Resolution = Resolution {
     height: 1080,
 };
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
     pub general: Option<General>,
@@ -72,7 +71,7 @@ pub struct Transition {
     pub dynamic_duration: Option<bool>,
     pub fill: Option<String>,
     pub filter: Option<String>,
-    #[serde(deserialize_with = "deserialize_flavour")]
+    #[serde(deserialize_with = "utils::deserialize_flavour")]
     pub flavour: Option<Vec<TransitionFlavour>>,
     pub fps: Option<u32>,
     pub resize: Option<String>,
@@ -94,25 +93,10 @@ pub enum TransitionFlavour {
     Outer,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            general: Some(General::default()),
-            transition: Some(Transition::default()),
-        }
-    }
-}
-
 impl Default for General {
     fn default() -> Self {
-        let wallpaper_path = UserDirs::new()
-            .map(|user_dirs| {
-                user_dirs
-                    .picture_dir()
-                    .expect("Failed to get Picture dir")
-                    .to_path_buf()
-            })
-            .unwrap()
+        let wallpaper_path = utils::get_dir_with(Dirs::Home, "Pictures")
+            .expect("Failed to get Pictures directory")
             .join(DEFAULT_WALLPAPER_DIR);
 
         General {
@@ -273,14 +257,25 @@ impl Display for TransitionFlavour {
 
 impl Config {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        let path = get_config_file("config.toml");
+        let path = match utils::get_config_file("config.toml") {
+            Ok(p) => p,
+            Err(e) => match e {
+                DirError::InvalidPath(_) | DirError::IoError(_) | DirError::MissingVar(_) => {
+                    error!("Error getting config file: {}", e);
+                    return Err(e.into());
+                }
+                DirError::DoesNotExist(_) => unreachable!(),
+            },
+        };
         let config_raw = fs::read_to_string(&path)?;
-        Ok(Self::from_str(&config_raw))
+        Ok(Self::from_raw(&config_raw))
     }
 
-    fn from_str(config_raw: &str) -> Self {
+    // NOTE: This is only public for unit testing from other modules
+    pub fn from_raw(config_raw: &str) -> Self {
         let mut config: Self = toml::from_str(config_raw).unwrap_or_else(|e| {
-            warn!("Syntax error in config: {e}\nFalling back to defaults...");
+            error!("Error parsing config: {e}");
+            warn!("Falling back to default config...");
             Self::default()
         });
 
@@ -545,7 +540,7 @@ mod tests {
             fps = 42069 
         "#;
 
-        let config = Config::from_str(toml);
+        let config = Config::from_raw(toml);
 
         // 1. Assert that user config is used above all else
         assert_eq!(

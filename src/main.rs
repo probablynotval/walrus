@@ -1,23 +1,24 @@
 #![warn(clippy::pedantic)]
 
 use clap::Parser;
-use log::{debug, error, LevelFilter};
+use log::{debug, error, warn, LevelFilter};
 use std::sync::mpsc;
 use walrus::{
     commands::{Cli, Commands},
     config::Config,
     daemon::Daemon,
-    ipc,
-    utils::{get_config_file, init_logger},
+    ipc, utils,
 };
 
 fn main() {
-    init_logger(LevelFilter::Trace).unwrap_or_else(|e| {
-        eprintln!("Failed to initialise logger: {e}\nContinuing without loggging...");
-    });
+    utils::init_logger(LevelFilter::Trace).unwrap_or_else(|e| eprintln!("{e}"));
     log::set_max_level(LevelFilter::Info);
 
-    let config = Config::new().unwrap_or_default();
+    let config = Config::new().unwrap_or_else(|e| {
+        error!("Error in config: {e}");
+        warn!("Falling back to default config...");
+        Config::default()
+    });
 
     let cli = Cli::parse();
     if let Some(cmd) = &cli.command {
@@ -70,7 +71,19 @@ fn main() {
 
     let (tx, rx) = mpsc::channel();
 
-    Config::watch(get_config_file("config.toml"), tx.clone()).expect("Error watching config.toml");
+    match utils::get_config_file("config.toml") {
+        Ok(path) => match Config::watch(path, tx.clone()) {
+            Ok(()) => debug!("Starting inotify service"),
+            Err(e) => {
+                error!("{e}");
+                warn!("Unable to start inotify service: config hot reloading will not work");
+            }
+        },
+        Err(e) => {
+            error!("{e}");
+            warn!("Unable to start inotify service: config hot reloading will not work");
+        }
+    }
 
     let ctrlc_tx = tx.clone();
     ctrlc::set_handler(move || {
