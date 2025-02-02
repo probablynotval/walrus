@@ -1,5 +1,4 @@
-use chrono::{DurationRound, Local, TimeDelta};
-use log::{debug, error, LevelFilter};
+use log::{debug, error, warn, LevelFilter};
 use serde::{Deserialize, Deserializer};
 use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger};
 use std::{
@@ -9,6 +8,7 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
 };
+use time::{format_description::well_known, OffsetDateTime};
 
 use crate::{
     config::{Resolution, TransitionFlavour},
@@ -19,14 +19,13 @@ pub const APPNAME: &str = "walrus";
 pub const SOCKET_PATH: &str = "/tmp/walrus.sock";
 
 pub enum Dirs {
-    // (Executable dir)
-    Bin,
-    Cache,
-    Config,
-    Data,
-    Home,
-    Runtime,
-    State,
+    Bin,     // Executable dir
+    Cache,   // Might need in the future
+    Config,  //
+    Data,    //
+    Home,    // Just $HOME
+    Runtime, // For IPC socket
+    State,   //
 }
 
 // Lil helper for get_dir function(s)
@@ -113,10 +112,18 @@ pub fn init_logger(log_level: LevelFilter) -> Result<(), Box<dyn Error>> {
                 return Err(e.into());
             }
         };
-        let log_name = Local::now()
-            .duration_trunc(TimeDelta::try_seconds(1).unwrap())
-            .unwrap()
-            .to_rfc3339()
+
+        let time = OffsetDateTime::now_local().unwrap_or_else(|e| {
+            error!("Failed to get local time offset: {e}");
+            warn!("Falling back to UTC");
+            OffsetDateTime::now_utc()
+        });
+
+        let log_name = time
+            .replace_nanosecond(0)
+            .expect("Error converting nanoseconds")
+            .format(&well_known::Rfc3339)
+            .expect("Invalid format")
             + ".log";
         let log_path = log_dir.join(log_name);
 
@@ -128,6 +135,7 @@ pub fn init_logger(log_level: LevelFilter) -> Result<(), Box<dyn Error>> {
         );
         let wlogger = WriteLogger::new(log_level, Config::default(), File::create(&log_path)?);
         CombinedLogger::init(vec![tlogger, wlogger])?;
+
         Ok(())
     }
 
