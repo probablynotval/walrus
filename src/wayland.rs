@@ -1,4 +1,4 @@
-use std::error::Error;
+use crate::config;
 
 use smithay_client_toolkit::{
     delegate_output, delegate_registry,
@@ -6,11 +6,10 @@ use smithay_client_toolkit::{
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
 };
+use std::error::Error;
 use wayland_client::{
     globals::registry_queue_init, protocol::wl_output, Connection, EventQueue, QueueHandle,
 };
-
-use crate::config;
 
 #[derive(Debug)]
 pub struct WaylandHandle {

@@ -1,19 +1,17 @@
+use crate::config::{Resolution, TransitionFlavour};
 use log::{debug, error, warn, LevelFilter};
 use serde::{Deserialize, Deserializer};
 use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger};
 use std::{
     env,
     error::Error,
+    fmt::{self, Display},
     fs::{self, File},
+    io,
     path::{Path, PathBuf},
     str::FromStr,
 };
 use time::{format_description::well_known, OffsetDateTime};
-
-use crate::{
-    config::{Resolution, TransitionFlavour},
-    error::DirError,
-};
 
 pub const APPNAME: &str = "walrus";
 pub const SOCKET_PATH: &str = "/tmp/walrus.sock";
@@ -27,6 +25,27 @@ pub enum Dirs {
     Runtime, // For IPC socket
     State,   //
 }
+
+#[derive(Debug)]
+pub enum DirError {
+    DoesNotExist(PathBuf),
+    InvalidPath(PathBuf),
+    IoError(io::Error),
+    MissingVar(String),
+}
+
+impl Display for DirError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DoesNotExist(p) => writeln!(f, "Directory does not exist: {:?}", p),
+            Self::InvalidPath(p) => writeln!(f, "Invalid path: {:?}", p),
+            Self::IoError(io_err) => writeln!(f, "I/O error: {}", io_err),
+            Self::MissingVar(var) => writeln!(f, "{var} environment variable is not set"),
+        }
+    }
+}
+
+impl Error for DirError {}
 
 // Lil helper for get_dir function(s)
 fn get_xdg_path(env_var: &str, default: impl FnOnce() -> PathBuf) -> PathBuf {
@@ -101,7 +120,6 @@ pub fn init_logger(log_level: LevelFilter) -> Result<(), Box<dyn Error>> {
         let log_dir = match get_dir_with(Dirs::State, "logs") {
             Ok(p) => p,
             Err(DirError::DoesNotExist(path)) => {
-                // NOTE: this might not log the error depite being mapped to DirError?
                 fs::create_dir_all(&path).map_err(DirError::IoError)?;
                 path
             }

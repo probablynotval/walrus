@@ -2,7 +2,11 @@ use super::{
     defaults::*,
     types::{Resolution, TransitionFlavour},
 };
-use crate::{commands::Commands, error::DirError, utils, wayland::WaylandHandle};
+use crate::{
+    commands::Commands,
+    utils::{self, DirError},
+    wayland::WaylandHandle,
+};
 use log::{debug, error, warn};
 use notify::{RecommendedWatcher, Watcher};
 use serde::{Deserialize, Serialize};
