@@ -10,12 +10,7 @@ use wayland_client::{
     globals::registry_queue_init, protocol::wl_output, Connection, EventQueue, QueueHandle,
 };
 
-#[derive(Debug)]
-pub struct MonitorInfo {
-    pub refresh_rate: f32,
-    pub resolution: (i32, i32),
-    id: u32,
-}
+use crate::config;
 
 #[derive(Debug)]
 pub struct WaylandHandle {
@@ -28,7 +23,7 @@ pub struct WaylandHandle {
 struct WaylandState {
     registry_state: RegistryState,
     output_state: OutputState,
-    outputs: Vec<MonitorInfo>,
+    outputs: Vec<config::MonitorInfo>,
 }
 
 impl WaylandHandle {
@@ -54,7 +49,7 @@ impl WaylandHandle {
         })
     }
 
-    pub fn get_outputs(&mut self) -> &[MonitorInfo] {
+    pub fn get_outputs(&mut self) -> &[config::MonitorInfo] {
         if self.event_queue.dispatch_pending(&mut self.state).is_ok() {
             let _ = self.event_queue.roundtrip(&mut self.state);
         }
@@ -75,9 +70,12 @@ impl OutputHandler for WaylandState {
                 .find(|m| m.current || m.preferred)
                 .or_else(|| info.modes.first())
             {
-                let monitor = MonitorInfo {
+                let monitor = config::MonitorInfo {
                     refresh_rate: mode.refresh_rate as f32 / 1000.0,
-                    resolution: mode.dimensions,
+                    resolution: config::Resolution {
+                        width: mode.dimensions.0,
+                        height: mode.dimensions.1,
+                    },
                     id: info.id,
                 };
                 self.outputs.push(monitor);
@@ -93,9 +91,12 @@ impl OutputHandler for WaylandState {
                 .find(|m| m.current || m.preferred)
                 .or_else(|| info.modes.first())
             {
-                let monitor = MonitorInfo {
+                let monitor = config::MonitorInfo {
                     refresh_rate: mode.refresh_rate as f32 / 1000.0,
-                    resolution: mode.dimensions,
+                    resolution: config::Resolution {
+                        width: mode.dimensions.0,
+                        height: mode.dimensions.1,
+                    },
                     id: info.id,
                 };
 

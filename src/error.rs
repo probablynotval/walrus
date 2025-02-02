@@ -25,18 +25,3 @@ impl Display for DirError {
 }
 
 impl Error for DirError {}
-
-#[derive(Debug)]
-pub enum ParseTransitionFlavourError {
-    InvalidFlavour(String),
-}
-
-impl Display for ParseTransitionFlavourError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidFlavour(s) => writeln!(f, "Invalid transition type: {}", s),
-        }
-    }
-}
-
-impl Error for ParseTransitionFlavourError {}
