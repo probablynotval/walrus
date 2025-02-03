@@ -1,13 +1,13 @@
 use clap::{Parser, Subcommand};
 
-#[derive(Parser)]
+#[derive(Clone, Parser)]
 #[command(name = "Walrus", version = "0.1.1", about = "SWWW wrapper", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Clone, Debug, Subcommand)]
 pub enum Commands {
     #[command(about = "Prints config")]
     Config,

@@ -15,7 +15,6 @@ use std::{
 use time::{format_description::well_known, OffsetDateTime};
 
 pub const APPNAME: &str = "walrus";
-pub const SOCKET_PATH: &str = "/tmp/walrus.sock";
 
 pub enum Dirs {
     Bin,     // Executable dir
@@ -38,10 +37,10 @@ pub enum DirError {
 impl Display for DirError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::DoesNotExist(p) => writeln!(f, "Directory does not exist: {:?}", p),
-            Self::InvalidPath(p) => writeln!(f, "Invalid path: {:?}", p),
-            Self::IoError(io_err) => writeln!(f, "I/O error: {}", io_err),
-            Self::MissingVar(var) => writeln!(f, "{var} environment variable is not set"),
+            Self::DoesNotExist(p) => writeln!(f, "Directory does not exist: {p:?}"),
+            Self::InvalidPath(p) => writeln!(f, "Invalid path: {p:?}"),
+            Self::IoError(io_err) => writeln!(f, "I/O error: {io_err}"),
+            Self::MissingVar(var) => writeln!(f, "Missing environment variable: {var}"),
         }
     }
 }
@@ -56,6 +55,8 @@ fn get_xdg_path(env_var: &str, default: impl FnOnce() -> PathBuf) -> PathBuf {
         .unwrap_or_else(default)
 }
 
+/// Used for getting a directory directly
+// TODO: might want to make this a builder
 pub fn get_dir(dir: Dirs) -> Result<PathBuf, DirError> {
     let home_dir = match env::var_os("HOME").map(PathBuf::from) {
         Some(p) if p.is_absolute() => p,
@@ -64,7 +65,7 @@ pub fn get_dir(dir: Dirs) -> Result<PathBuf, DirError> {
     };
 
     let base_dir_path = match dir {
-        Dirs::Home => return Ok(home_dir),
+        Dirs::Home => home_dir,
         Dirs::Bin => get_xdg_path("XDG_BIN_HOME", || home_dir.join(".local/bin")),
         Dirs::Cache => get_xdg_path("XDG_CACHE_HOME", || home_dir.join(".cache")),
         Dirs::Config => get_xdg_path("XDG_CONFIG_HOME", || home_dir.join(".config")),
@@ -76,15 +77,26 @@ pub fn get_dir(dir: Dirs) -> Result<PathBuf, DirError> {
         Dirs::State => get_xdg_path("XDG_STATE_HOME", || home_dir.join(".local/state")),
     };
 
-    // To seperate our files from other files
-    let app_dir_path = base_dir_path.join(APPNAME);
-
-    Ok(app_dir_path)
+    Ok(base_dir_path)
 }
 
+/// Used for getting a directory with a walrus directory at the end
+pub fn get_app_dir(dir: Dirs) -> Result<PathBuf, DirError> {
+    let path = get_dir(dir)?.join(APPNAME);
+    Ok(path)
+}
+
+/// Used for getting a directory directly
 pub fn get_dir_with<P: AsRef<Path>>(dir: Dirs, append_dir: P) -> Result<PathBuf, DirError> {
-    let base = get_dir(dir)?;
-    let path = base.join(append_dir);
+    let path = get_dir(dir)?.join(append_dir);
+    if !path.exists() {
+        return Err(DirError::DoesNotExist(path));
+    }
+    Ok(path)
+}
+
+pub fn get_app_dir_with<P: AsRef<Path>>(dir: Dirs, append_dir: P) -> Result<PathBuf, DirError> {
+    let path = get_dir(dir)?.join(append_dir).join(APPNAME);
     if !path.exists() {
         return Err(DirError::DoesNotExist(path));
     }
@@ -94,17 +106,14 @@ pub fn get_dir_with<P: AsRef<Path>>(dir: Dirs, append_dir: P) -> Result<PathBuf,
 pub fn get_config_file<P: AsRef<Path>>(filename: P) -> Result<PathBuf, DirError> {
     let config_dir = match get_dir(Dirs::Config) {
         Ok(p) => p,
-        Err(e) => match e {
-            DirError::DoesNotExist(path) => {
-                fs::create_dir_all(&path).map_err(DirError::IoError)?;
-                path
-            }
-            // NOTE: Unsure about this since IoError contains a nested Error
-            DirError::InvalidPath(_) | DirError::IoError(_) | DirError::MissingVar(_) => {
-                error!("Error getting config directory: {e}");
-                return Err(e);
-            }
-        },
+        Err(DirError::DoesNotExist(path)) => {
+            fs::create_dir_all(&path).map_err(DirError::IoError)?;
+            path
+        }
+        Err(e) => {
+            error!("{}", e);
+            return Err(e);
+        }
     };
     if !config_dir.exists() {
         fs::create_dir_all(&config_dir).map_err(DirError::IoError)?;
@@ -118,7 +127,7 @@ pub fn get_config_file<P: AsRef<Path>>(filename: P) -> Result<PathBuf, DirError>
 
 pub fn init_logger(log_level: LevelFilter) -> Result<(), Box<dyn Error>> {
     fn try_combined_logger(log_level: LevelFilter) -> Result<(), Box<dyn Error>> {
-        let log_dir = match get_dir_with(Dirs::State, "logs") {
+        let log_dir = match get_app_dir_with(Dirs::State, "logs") {
             Ok(p) => p,
             Err(DirError::DoesNotExist(path)) => {
                 fs::create_dir_all(&path).map_err(DirError::IoError)?;

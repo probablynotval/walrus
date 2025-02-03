@@ -2,7 +2,7 @@ use crate::{
     commands::Commands,
     config::{Config, TransitionFlavour},
     ipc::send_ipc_command,
-    utils::{decrement_index, increment_index, normalize_duration, SOCKET_PATH},
+    utils::{decrement_index, increment_index, normalize_duration},
 };
 
 use log::{debug, error, info, warn};
@@ -10,8 +10,7 @@ use rand::{rngs::SmallRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
 use std::{
     env,
     fmt::{self, Display},
-    fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Command,
     sync::mpsc::{self, Receiver},
     time::Duration,
@@ -23,6 +22,7 @@ pub struct Daemon {
     pub index: usize,
     pub paused: bool,
     pub queue: Vec<String>,
+    // TODO: this stuff would probably move to the TransitionBuilder?
     rng: SmallRng,
     angle: Option<f64>,
 }
@@ -92,9 +92,6 @@ impl Daemon {
                 }
                 Ok(Commands::Shutdown) => {
                     debug!("Received Shutdown command");
-                    if Path::new(SOCKET_PATH).exists() {
-                        let _ = fs::remove_file(SOCKET_PATH);
-                    }
                     cont = false;
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {

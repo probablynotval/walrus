@@ -1,11 +1,15 @@
-use crate::{commands::Commands, utils::SOCKET_PATH};
+use crate::{
+    commands::Commands,
+    utils::{get_dir, Dirs},
+};
 
-use log::{debug, error};
+use log::{debug, error, warn};
 use std::{
     fs,
     io::{self, Read, Write},
+    marker::PhantomData,
     os::unix::net::{UnixListener, UnixStream},
-    path::Path,
+    path::PathBuf,
     sync::mpsc::Sender,
     thread,
 };
@@ -36,23 +40,62 @@ impl Commands {
     }
 }
 
-pub struct IPCServer {
-    socket_path: String,
+pub struct IpcSocket<T> {
+    socket_path: PathBuf,
+    _phantom: PhantomData<T>,
 }
 
-impl IPCServer {
-    pub fn new(socket_path: String) -> Self {
-        Self { socket_path }
+pub struct Server;
+pub struct Client;
+
+struct SocketGuard(PathBuf);
+
+impl<T> IpcSocket<T> {
+    pub fn new(socket_path: impl Into<PathBuf>) -> Self {
+        Self {
+            socket_path: socket_path.into(),
+            _phantom: PhantomData,
+        }
     }
 
+    pub fn bind_default() -> io::Result<Self> {
+        let socket_path = Self::default_path()?;
+
+        Ok(Self::new(socket_path))
+    }
+
+    fn default_path() -> io::Result<PathBuf> {
+        let path = match get_dir(Dirs::Runtime) {
+            Ok(path) => path,
+            Err(e) => {
+                error!("{}", e);
+                warn!("Socket falling back to /tmp/walrus");
+                PathBuf::from("/tmp")
+            }
+        };
+
+        // NOTE:
+        // I am assuming that /tmp exists.
+        // Probably a bad idea to try to create it anyway, wouldn't even have permission to.
+        // Not to mention if neither path exists, it's more likely than not a problem with the
+        // user's system.
+
+        Ok(path.join("walrus"))
+    }
+}
+
+impl IpcSocket<Server> {
     pub fn start(&self, tx: Sender<Commands>) -> io::Result<()> {
-        if Path::new(&self.socket_path).exists() {
+        if self.socket_path.exists() {
             fs::remove_file(&self.socket_path)?;
         }
 
         let listener = UnixListener::bind(&self.socket_path)?;
+        let guard = SocketGuard(self.socket_path.clone());
 
         thread::spawn(move || {
+            let _guard = guard;
+
             for stream in listener.incoming() {
                 match stream {
                     Ok(mut stream) => {
@@ -92,21 +135,15 @@ impl IPCServer {
                     Err(e) => error!("Error accepting connection: {e:#?}"),
                 }
             }
+
+            // NOTE: Socket file should be deleted since guard is dropped here
         });
 
         Ok(())
     }
 }
 
-pub struct IPCClient {
-    socket_path: String,
-}
-
-impl IPCClient {
-    fn new(socket_path: String) -> Self {
-        Self { socket_path }
-    }
-
+impl IpcSocket<Client> {
     fn send_command(&self, command: Commands) -> io::Result<()> {
         let mut stream = UnixStream::connect(&self.socket_path)?;
         let Some(cmd) = command.to_bytes() else {
@@ -120,21 +157,45 @@ impl IPCClient {
     }
 }
 
+impl Drop for SocketGuard {
+    fn drop(&mut self) {
+        if self.0.exists() {
+            if let Err(e) = fs::remove_file(&self.0) {
+                error!("Failed to clean up socket {:?}: {e}", self.0);
+            }
+        }
+    }
+}
+
 pub fn setup_ipc(tx: Sender<Commands>) -> io::Result<()> {
     debug!("Starting IPC server");
-    // TODO: This socket path should actually be in XDG_RUNTIME_DIR, if I am not mistaken.
-    // Currently it's in /tmp. I should probably use /tmp/walrus/walrus.sock for fallback. Just
-    // remember to cleanup.
-    let server = IPCServer::new(String::from(SOCKET_PATH));
+    let server = IpcSocket::<Server>::bind_default()?;
     server.start(tx)?;
     Ok(())
 }
 
 pub fn send_ipc_command(command: Commands) -> io::Result<()> {
     debug!("IPC sending {:?} command", command);
-    // TODO: This socket path should actually be in XDG_RUNTIME_DIR, if I am not mistaken.
-    // Currently it's in /tmp. I should probably use /tmp/walrus/walrus.sock for fallback. Just
-    // remember to cleanup.
-    let client = IPCClient::new(String::from(SOCKET_PATH));
+    let client = IpcSocket::<Client>::bind_default()?;
     client.send_command(command)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+
+    use super::*;
+
+    #[test]
+    fn test_ipc_cmd() {
+        let (tx, rx) = mpsc::channel();
+
+        setup_ipc(tx.clone()).expect("Failed to setup IPC");
+
+        let cmd = Commands::Next;
+        let _ = tx.send(cmd.clone());
+        let rx_cmd = rx.recv().unwrap();
+
+        assert_eq!(cmd.to_bytes().unwrap(), rx_cmd.to_bytes().unwrap());
+    }
 }
