@@ -7,6 +7,7 @@ use super::{
     },
 };
 use crate::utils::{self, Dirs};
+
 use log::{warn, LevelFilter};
 use std::{
     cmp::Ordering,

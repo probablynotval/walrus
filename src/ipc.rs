@@ -1,4 +1,5 @@
 use crate::{commands::Commands, utils::SOCKET_PATH};
+
 use log::{debug, error};
 use std::{
     fs,

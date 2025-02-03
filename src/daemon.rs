@@ -1,3 +1,10 @@
+use crate::{
+    commands::Commands,
+    config::{Config, TransitionFlavour},
+    ipc::send_ipc_command,
+    utils::{decrement_index, increment_index, normalize_duration, SOCKET_PATH},
+};
+
 use log::{debug, error, info, warn};
 use rand::{rngs::SmallRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
 use std::{
@@ -10,13 +17,6 @@ use std::{
     time::Duration,
 };
 use walkdir::WalkDir;
-
-use crate::{
-    commands::Commands,
-    config::{Config, TransitionFlavour},
-    ipc::send_ipc_command,
-    utils::{decrement_index, increment_index, normalize_duration, SOCKET_PATH},
-};
 
 pub struct Daemon {
     pub config: Config,

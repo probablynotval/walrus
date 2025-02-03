@@ -1,12 +1,13 @@
 use super::{
     defaults::*,
-    types::{Resolution, TransitionFlavour},
+    types::{HighestRefreshRate, HighestResolution, Resolution, TransitionFlavour},
 };
 use crate::{
     commands::Commands,
     utils::{self, DirError},
     wayland::WaylandHandle,
 };
+
 use log::{debug, error, warn};
 use notify::{RecommendedWatcher, Watcher};
 use serde::{Deserialize, Serialize};
@@ -76,33 +77,23 @@ impl Config {
             Self::default()
         });
 
-        // 1. Get highest refresh rate monitor.
-        // 2. If more than one has the highest refresh rate, use resolution instead.
         let (fps, res) = match WaylandHandle::new() {
-            Ok(mut wayland) => {
-                let outputs = wayland.get_outputs();
-                outputs
-                    .iter()
-                    .max_by(|a, b| {
-                        a.refresh_rate.total_cmp(&b.refresh_rate).then_with(|| {
-                            let ap = a.resolution.width as i64 * a.resolution.height as i64;
-                            let bp = b.resolution.width as i64 * b.resolution.height as i64;
-                            ap.cmp(&bp)
-                        })
-                    })
-                    .map_or_else(
-                        || {
-                            error!("No monitors found");
-                            warn!("Falling back to default FPS and resolution");
-                            (FALLBACK_FPS, FALLBACK_RESOLUTION)
-                        },
-                        |m| {
-                            let fps = m.refresh_rate.round() as u32;
-                            let res = m.resolution;
-                            (fps, res)
-                        },
-                    )
-            }
+            Ok(mut wayland) => wayland
+                .get_outputs()
+                .iter()
+                .max_by(|a, b| {
+                    HighestRefreshRate(a)
+                        .cmp(&HighestRefreshRate(b))
+                        .then_with(|| HighestResolution(a).cmp(&HighestResolution(b)))
+                })
+                .map_or_else(
+                    || {
+                        error!("No monitors found");
+                        warn!("Falling back to default FPS and resolution");
+                        (FALLBACK_FPS, FALLBACK_RESOLUTION)
+                    },
+                    |m| (m.refresh_rate.round() as u32, m.resolution),
+                ),
             Err(e) => {
                 warn!("Failed to connect to Wayland: {e}");
                 (FALLBACK_FPS, FALLBACK_RESOLUTION)
@@ -216,11 +207,9 @@ mod tests {
         let monitor = outputs
             .iter()
             .max_by(|a, b| {
-                a.refresh_rate.total_cmp(&b.refresh_rate).then_with(|| {
-                    let ap = a.resolution.width as i64 * a.resolution.height as i64;
-                    let bp = b.resolution.width as i64 * b.resolution.height as i64;
-                    ap.cmp(&bp)
-                })
+                HighestRefreshRate(a)
+                    .cmp(&HighestRefreshRate(b))
+                    .then_with(|| HighestResolution(a).cmp(&HighestResolution(b)))
             })
             .expect("Monitor returned empty iterator (no monitor was found)");
 

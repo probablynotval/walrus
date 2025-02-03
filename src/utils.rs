@@ -1,4 +1,5 @@
 use crate::config::{Resolution, TransitionFlavour};
+
 use log::{debug, error, warn, LevelFilter};
 use serde::{Deserialize, Deserializer};
 use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger};
