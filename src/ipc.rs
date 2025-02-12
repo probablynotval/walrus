@@ -81,6 +81,7 @@ impl<T> IpcSocket<T> {
         // Not to mention if neither path exists, it's more likely than not a problem with the
         // user's system.
 
+        debug!("Socket at: {:?}", path.join("walrus"));
         Ok(path.join("walrus"))
     }
 }
@@ -98,45 +99,30 @@ impl IpcSocket<Server> {
             let _guard = guard;
 
             for stream in listener.incoming() {
-                match stream {
-                    Ok(mut stream) => {
-                        let mut buffer = [0; 1];
-                        if stream.read_exact(&mut buffer).is_ok() {
-                            if let Some(command) = Commands::from_byte(buffer[0]) {
-                                match command {
-                                    Commands::Config => (),
-                                    Commands::Next => {
-                                        debug!("IPC received Next command");
-                                        let _ = tx.send(Commands::Next);
-                                    }
-                                    Commands::Pause => {
-                                        debug!("IPC received Pause command");
-                                        let _ = tx.send(Commands::Pause);
-                                    }
-                                    Commands::Previous => {
-                                        debug!("IPC received Previous command");
-                                        let _ = tx.send(Commands::Previous);
-                                    }
-                                    Commands::Resume => {
-                                        debug!("IPC received Resume command");
-                                        let _ = tx.send(Commands::Resume);
-                                    }
-                                    Commands::Reload => {
-                                        debug!("IPC received Reload command");
-                                        let _ = tx.send(Commands::Reload);
-                                    }
-                                    Commands::Shutdown => {
-                                        debug!("IPC received Shutdown command");
-                                        let _ = tx.send(Commands::Shutdown);
-                                    }
-                                }
-                            }
-                        }
+                let mut stream = match stream {
+                    Ok(stream) => stream,
+                    Err(e) => {
+                        error!("Error accepting connection: {e:#?}");
+                        continue;
                     }
-                    Err(e) => error!("Error accepting connection: {e:#?}"),
-                }
-            }
+                };
 
+                let mut buffer = [0; 1];
+                if stream.read_exact(&mut buffer).is_err() {
+                    continue;
+                }
+
+                let Some(command) = Commands::from_byte(buffer[0]) else {
+                    continue;
+                };
+
+                if let Commands::Config = command {
+                    continue;
+                }
+
+                debug!("IPC received {:?} command", command);
+                let _ = tx.send(command);
+            }
             // NOTE: Socket file should be deleted since guard is dropped here
         });
 

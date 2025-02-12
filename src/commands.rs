@@ -7,7 +7,7 @@ pub struct Cli {
     pub command: Option<Commands>,
 }
 
-#[derive(Clone, Debug, Subcommand)]
+#[derive(Clone, Copy, Debug, Subcommand)]
 pub enum Commands {
     #[command(about = "Prints config")]
     Config,

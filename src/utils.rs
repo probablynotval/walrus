@@ -8,7 +8,7 @@ use std::{
     str::FromStr,
 };
 
-use log::{debug, error, warn, LevelFilter};
+use log::{debug, error, info, warn, LevelFilter};
 use serde::{Deserialize, Deserializer};
 use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger};
 use time::{format_description::well_known, OffsetDateTime};
@@ -105,7 +105,7 @@ pub fn get_app_dir_with<P: AsRef<Path>>(dir: Dirs, append_dir: P) -> Result<Path
 }
 
 pub fn get_config_file<P: AsRef<Path>>(filename: P) -> Result<PathBuf, DirError> {
-    let config_dir = match get_dir(Dirs::Config) {
+    let config_dir = match get_app_dir(Dirs::Config) {
         Ok(p) => p,
         Err(DirError::DoesNotExist(path)) => {
             fs::create_dir_all(&path).map_err(DirError::IoError)?;
@@ -117,10 +117,14 @@ pub fn get_config_file<P: AsRef<Path>>(filename: P) -> Result<PathBuf, DirError>
         }
     };
     if !config_dir.exists() {
+        warn!("Config directory does not exist");
+        info!("Created config directory at: {:?}", config_dir);
         fs::create_dir_all(&config_dir).map_err(DirError::IoError)?;
     }
     let config_file = config_dir.join(filename);
     if !config_file.exists() {
+        warn!("Config file does not exist");
+        info!("Created config file at: {:?}", config_file);
         File::create(&config_file).map_err(DirError::IoError)?;
     }
     Ok(config_file)

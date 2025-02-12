@@ -28,34 +28,9 @@ fn main() {
                 debug!("Printing config to stdout...");
                 return println!("{config}");
             }
-            Commands::Next => {
-                debug!("Attempting to send Next command via IPC...");
-                return ipc::send_ipc_command(Commands::Next)
-                    .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
-            }
-            Commands::Pause => {
-                debug!("Attempting to send Pause command via IPC...");
-                return ipc::send_ipc_command(Commands::Pause)
-                    .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
-            }
-            Commands::Previous => {
-                debug!("Attempting to send Previous command via IPC...");
-                return ipc::send_ipc_command(Commands::Previous)
-                    .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
-            }
-            Commands::Reload => {
-                debug!("Attempting to send Reload command via IPC...");
-                return ipc::send_ipc_command(Commands::Reload)
-                    .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
-            }
-            Commands::Resume => {
-                debug!("Attempting to send Resume command via IPC...");
-                return ipc::send_ipc_command(Commands::Resume)
-                    .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
-            }
-            Commands::Shutdown => {
-                debug!("Attempting to send Shutdown command via IPC...");
-                return ipc::send_ipc_command(Commands::Shutdown)
+            ipc_cmd => {
+                debug!("Attempting to send {:?} command via IPC...", ipc_cmd);
+                return ipc::send_ipc_command(*ipc_cmd)
                     .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
             }
         }

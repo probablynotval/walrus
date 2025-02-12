@@ -140,26 +140,19 @@ impl Config {
             let mut watcher = watcher;
 
             while let Ok(event_res) = rx.recv() {
-                match event_res {
-                    Ok(event) => {
-                        debug!("File event: {event:?}");
-                        if event.kind.is_modify() || event.kind.is_remove() {
-                            cmd_tx.send(Commands::Reload).unwrap();
+                let event = event_res?;
+                debug!("File event: {event:?}");
+                if event.kind.is_modify() || event.kind.is_remove() {
+                    cmd_tx.send(Commands::Reload).unwrap();
 
-                            if event.kind.is_remove() {
-                                debug!("File removed, trying to re-establish watch");
-                                thread::sleep(Duration::from_millis(200));
-                                watcher.watch(
-                                    abs_path.as_ref(),
-                                    notify::RecursiveMode::NonRecursive,
-                                )?;
-                            }
-                        }
+                    if event.kind.is_remove() {
+                        debug!("File removed, trying to re-establish watch");
+                        thread::sleep(Duration::from_millis(200));
+                        watcher.watch(abs_path.as_ref(), notify::RecursiveMode::NonRecursive)?;
                     }
-                    Err(e) => return Err(e),
                 }
             }
-            warn!("Watcher thread stopping; config hot reload stopped");
+            warn!("Watcher thread stopping; config hot reloading stopped");
             Ok(())
         });
 
