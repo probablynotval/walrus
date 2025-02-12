@@ -1,3 +1,13 @@
+use std::{
+    cmp::Ordering,
+    error::Error,
+    fmt::{self, Display, Formatter},
+    path::PathBuf,
+    str::FromStr,
+};
+
+use log::{warn, LevelFilter};
+
 use super::{
     core::{Config, General, Transition},
     defaults::*,
@@ -7,15 +17,6 @@ use super::{
     },
 };
 use crate::utils::{self, Dirs};
-
-use log::{warn, LevelFilter};
-use std::{
-    cmp::Ordering,
-    error::Error,
-    fmt::{self, Display, Formatter},
-    path::PathBuf,
-    str::FromStr,
-};
 
 impl Config {
     fn general(&self) -> General {

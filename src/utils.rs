@@ -1,8 +1,3 @@
-use crate::config::{Resolution, TransitionFlavour};
-
-use log::{debug, error, warn, LevelFilter};
-use serde::{Deserialize, Deserializer};
-use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger};
 use std::{
     env,
     error::Error,
@@ -12,7 +7,13 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
 };
+
+use log::{debug, error, warn, LevelFilter};
+use serde::{Deserialize, Deserializer};
+use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger};
 use time::{format_description::well_known, OffsetDateTime};
+
+use crate::config::{Resolution, TransitionFlavour};
 
 pub const APPNAME: &str = "walrus";
 

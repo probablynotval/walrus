@@ -1,8 +1,9 @@
 #![warn(clippy::pedantic)]
 
+use std::sync::mpsc;
+
 use clap::Parser;
 use log::{debug, error, warn, LevelFilter};
-use std::sync::mpsc;
 use walrus::{
     commands::{Cli, Commands},
     config::Config,

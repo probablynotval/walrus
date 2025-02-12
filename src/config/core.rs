@@ -1,3 +1,16 @@
+use std::{
+    error::Error,
+    fs,
+    path::{Path, PathBuf},
+    sync::mpsc::{self, Sender},
+    thread,
+    time::Duration,
+};
+
+use log::{debug, error, warn};
+use notify::{RecommendedWatcher, Watcher};
+use serde::{Deserialize, Serialize};
+
 use super::{
     defaults::*,
     types::{HighestRefreshRate, HighestResolution, Resolution, TransitionFlavour},
@@ -6,18 +19,6 @@ use crate::{
     commands::Commands,
     utils::{self, DirError},
     wayland::WaylandHandle,
-};
-
-use log::{debug, error, warn};
-use notify::{RecommendedWatcher, Watcher};
-use serde::{Deserialize, Serialize};
-use std::{
-    error::Error,
-    fs,
-    path::{Path, PathBuf},
-    sync::mpsc::{self, Sender},
-    thread,
-    time::Duration,
 };
 
 #[derive(Debug, Default, Deserialize, Serialize)]

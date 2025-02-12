@@ -1,12 +1,3 @@
-use crate::{
-    commands::Commands,
-    config::{Config, TransitionFlavour},
-    ipc::send_ipc_command,
-    utils::{decrement_index, increment_index, normalize_duration},
-};
-
-use log::{debug, error, info, warn};
-use rand::{rngs::SmallRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
 use std::{
     env,
     fmt::{self, Display},
@@ -15,7 +6,17 @@ use std::{
     sync::mpsc::{self, Receiver},
     time::Duration,
 };
+
+use log::{debug, error, info, warn};
+use rand::{rngs::SmallRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
 use walkdir::WalkDir;
+
+use crate::{
+    commands::Commands,
+    config::{Config, TransitionFlavour},
+    ipc::send_ipc_command,
+    utils::{decrement_index, increment_index, normalize_duration},
+};
 
 pub struct Daemon {
     pub config: Config,

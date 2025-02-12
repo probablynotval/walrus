@@ -1,9 +1,3 @@
-use crate::{
-    commands::Commands,
-    utils::{get_dir, Dirs},
-};
-
-use log::{debug, error, warn};
 use std::{
     fs,
     io::{self, Read, Write},
@@ -12,6 +6,13 @@ use std::{
     path::PathBuf,
     sync::mpsc::Sender,
     thread,
+};
+
+use log::{debug, error, warn};
+
+use crate::{
+    commands::Commands,
+    utils::{get_dir, Dirs},
 };
 
 impl Commands {
