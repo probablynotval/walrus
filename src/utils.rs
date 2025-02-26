@@ -84,6 +84,9 @@ pub fn get_dir(dir: Dirs) -> Result<PathBuf, DirError> {
 /// Used for getting a directory with a walrus directory at the end
 pub fn get_app_dir(dir: Dirs) -> Result<PathBuf, DirError> {
     let path = get_dir(dir)?.join(APPNAME);
+    if !path.exists() {
+        return Err(DirError::DoesNotExist(path));
+    }
     Ok(path)
 }
 
@@ -111,21 +114,18 @@ pub fn get_config_file<P: AsRef<Path>>(filename: P) -> Result<PathBuf, DirError>
             fs::create_dir_all(&path).map_err(DirError::IoError)?;
             path
         }
-        Err(e) => {
-            error!("{}", e);
-            return Err(e);
-        }
+        Err(e) => return Err(e),
     };
     if !config_dir.exists() {
         warn!("Config directory does not exist");
-        info!("Created config directory at: {:?}", config_dir);
         fs::create_dir_all(&config_dir).map_err(DirError::IoError)?;
+        info!("Created config directory at: {:?}", config_dir);
     }
     let config_file = config_dir.join(filename);
     if !config_file.exists() {
         warn!("Config file does not exist");
-        info!("Created config file at: {:?}", config_file);
         File::create(&config_file).map_err(DirError::IoError)?;
+        info!("Created config file at: {:?}", config_file);
     }
     Ok(config_file)
 }
