@@ -8,7 +8,7 @@ use std::{
 };
 
 use log::{debug, error, info, warn};
-use rand::{rngs::SmallRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::SmallRng, seq::SliceRandom};
 use walkdir::WalkDir;
 
 use crate::{
@@ -46,7 +46,7 @@ impl Daemon {
             paused: false,
             queue,
             index: 0,
-            rng: SmallRng::from_entropy(),
+            rng: SmallRng::from_os_rng(),
         })
     }
 
@@ -124,81 +124,107 @@ impl Daemon {
 
     fn get_transition(&mut self) {
         let bezier = self.config.bezier();
-        env::set_var(
-            "SWWW_TRANSITION_BEZIER",
-            format!("{},{},{},{}", bezier[0], bezier[1], bezier[2], bezier[3]),
-        );
+        unsafe {
+            env::set_var(
+                "SWWW_TRANSITION_BEZIER",
+                format!("{},{},{},{}", bezier[0], bezier[1], bezier[2], bezier[3]),
+            );
+        }
 
         let duration = self.config.duration();
         debug!("Duration: {duration}");
 
         let fps = self.config.fps();
-        env::set_var("SWWW_TRANSITION_FPS", fps.to_string());
+        unsafe {
+            env::set_var("SWWW_TRANSITION_FPS", fps.to_string());
+        }
 
         let step = self.config.step();
-        env::set_var("SWWW_TRANSITION_STEP", step.to_string());
+        unsafe {
+            env::set_var("SWWW_TRANSITION_STEP", step.to_string());
+        }
 
         let flavour = self.config.flavour();
-        let flavour_rng = self.rng.gen_range(0..flavour.len());
+        let flavour_rng = self.rng.random_range(0..flavour.len());
         let flavour_selection = flavour.get(flavour_rng).unwrap();
-        env::set_var("SWWW_TRANSITION", flavour_selection.to_string());
+        unsafe {
+            env::set_var("SWWW_TRANSITION", flavour_selection.to_string());
+        }
         debug!("Flavour: {}", flavour_selection.to_string());
 
         let resolution = self.config.resolution();
 
         match flavour_selection {
             TransitionFlavour::Wipe => {
-                let angle = self.rng.gen_range(0.0..360.0);
+                let angle = self.rng.random_range(0.0..360.0);
                 self.angle = Some(angle);
                 debug!("Angle: {angle}");
-                env::set_var("SWWW_TRANSITION_ANGLE", angle.to_string());
+                unsafe {
+                    env::set_var("SWWW_TRANSITION_ANGLE", angle.to_string());
+                }
 
                 if self.config.dynamic_duration() {
                     let normalized_duration = normalize_duration(duration, resolution, angle);
                     debug!("Dynamic duration: {normalized_duration}");
-                    env::set_var("SWWW_TRANSITION_DURATION", normalized_duration.to_string());
+                    unsafe {
+                        env::set_var("SWWW_TRANSITION_DURATION", normalized_duration.to_string());
+                    }
                 } else {
-                    env::set_var(
-                        "SWWW_TRANSITION_DURATION",
-                        self.config.duration().to_string(),
-                    );
+                    unsafe {
+                        env::set_var(
+                            "SWWW_TRANSITION_DURATION",
+                            self.config.duration().to_string(),
+                        );
+                    }
                 }
             }
             TransitionFlavour::Wave => {
-                let angle = self.rng.gen_range(0.0..360.0);
+                let angle = self.rng.random_range(0.0..360.0);
                 debug!("ActualAngle: {angle}");
                 let angle_string = ((360.0 + angle - 90.0) % 360.0).to_string();
                 debug!("FakeAngle: {angle_string}");
-                env::set_var("SWWW_TRANSITION_ANGLE", angle_string);
+                unsafe {
+                    env::set_var("SWWW_TRANSITION_ANGLE", angle_string);
+                }
 
                 if self.config.dynamic_duration() {
                     let normalized_duration = normalize_duration(duration, resolution, angle);
                     debug!("Dynamic duration: {normalized_duration}");
-                    env::set_var("SWWW_TRANSITION_DURATION", normalized_duration.to_string());
+                    unsafe {
+                        env::set_var("SWWW_TRANSITION_DURATION", normalized_duration.to_string());
+                    }
                 } else {
-                    env::set_var(
-                        "SWWW_TRANSITION_DURATION",
-                        self.config.duration().to_string(),
-                    );
+                    unsafe {
+                        env::set_var(
+                            "SWWW_TRANSITION_DURATION",
+                            self.config.duration().to_string(),
+                        );
+                    }
                 }
 
                 let (wave_width_min, wave_width_max, wave_height_min, wave_height_max) =
                     self.config.wave_size();
-                let width_wave_rng = self.rng.gen_range(wave_width_min..=wave_width_max);
-                let height_wave_rng = self.rng.gen_range(wave_height_min..=wave_height_max);
-                env::set_var(
-                    "SWWW_TRANSITION_WAVE",
-                    format!("{},{}", width_wave_rng, height_wave_rng),
-                );
+                let width_wave_rng = self.rng.random_range(wave_width_min..=wave_width_max);
+                let height_wave_rng = self.rng.random_range(wave_height_min..=wave_height_max);
+                unsafe {
+                    env::set_var(
+                        "SWWW_TRANSITION_WAVE",
+                        format!("{},{}", width_wave_rng, height_wave_rng),
+                    );
+                }
             }
             TransitionFlavour::Grow | TransitionFlavour::Outer => {
-                env::set_var("SWWW_TRANSITION_DURATION", duration.to_string());
-                let x_position_rng = self.rng.gen::<f64>();
-                let y_position_rng = self.rng.gen::<f64>();
-                env::set_var(
-                    "SWWW_TRANSITION_POS",
-                    format!("{},{}", x_position_rng, y_position_rng),
-                );
+                unsafe {
+                    env::set_var("SWWW_TRANSITION_DURATION", duration.to_string());
+                }
+                let x_position_rng = self.rng.random::<f64>();
+                let y_position_rng = self.rng.random::<f64>();
+                unsafe {
+                    env::set_var(
+                        "SWWW_TRANSITION_POS",
+                        format!("{},{}", x_position_rng, y_position_rng),
+                    );
+                }
             }
         };
     }
@@ -246,7 +272,7 @@ impl Daemon {
     }
 
     fn shuffle_queue(&mut self) {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         self.queue.shuffle(&mut rng);
         self.index = 0;
     }

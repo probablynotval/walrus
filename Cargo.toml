@@ -1,14 +1,14 @@
 [package]
 name = "walrus"
 version = "0.1.1"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 clap = { version = "4.5.13", features = ["derive", "env"] }
 ctrlc = { version = "3.4.5", features = ["termination"] }
 log = "0.4.22"
 notify = "7.0.0"
-rand = { version = "0.8.5", features = ["small_rng"] }
+rand = "0.9.0"
 serde = { version = "1.0.204", features = ["derive"] }
 simplelog = "0.12.2"
 smithay-client-toolkit = "0.19.2"
