@@ -54,7 +54,7 @@ flavour = ["wipe", "wave", "grow", "outer"]
 fps = 60 # Automatically inferred based on highest refresh rate monitor.
 resize = "crop"
 step = 60
-wave_size = [55, 60, 45, 50]
+wave_size = [70, 80, 35, 40]
 ```
 
 **NOTE**: if no configuration is found the program will use these defaults.
