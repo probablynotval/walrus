@@ -8,10 +8,10 @@ use std::{
     str::FromStr,
 };
 
-use log::{debug, error, info, warn, LevelFilter};
+use log::{LevelFilter, debug, error, info, warn};
 use serde::{Deserialize, Deserializer};
 use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger};
-use time::{format_description::well_known, OffsetDateTime};
+use time::{OffsetDateTime, format_description::well_known};
 
 use crate::config::{Resolution, TransitionFlavour};
 
@@ -195,11 +195,11 @@ pub fn init_logger(log_level: LevelFilter) -> Result<(), Box<dyn Error>> {
     }
 }
 
-pub fn normalize_duration(base_duration: f64, res: Resolution, angle_degrees: f64) -> f64 {
+pub fn normalize_duration(base_duration: f64, res: Resolution, angle_degrees: f32) -> f64 {
     let width = f64::from(res.width);
     let height = f64::from(res.height);
 
-    let theta = angle_degrees.to_radians();
+    let theta: f64 = angle_degrees.to_radians().into();
     let distance_at_angle = (width * theta.cos().abs()) + (height * theta.sin().abs());
     debug!("DistanceAtAngle: {distance_at_angle}");
     let diagonal_distance = (width.powi(2) + height.powi(2)).sqrt();

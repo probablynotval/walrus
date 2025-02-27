@@ -52,7 +52,7 @@ pub(super) struct Transition {
     pub(super) fps: Option<u32>,
     pub(super) resize: Option<String>,
     pub(super) step: Option<u8>,
-    pub(super) wave_size: Option<(i32, i32, i32, i32)>,
+    pub(super) wave_size: Option<(u32, u32, u32, u32)>,
 }
 
 impl Config {

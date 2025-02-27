@@ -18,7 +18,7 @@ pub(super) const DEFAULT_SHUFFLE: bool = true;
 pub(super) const DEFAULT_STEP: u8 = 60;
 pub(super) const DEFAULT_SWW_PATH: &str = "/usr/bin/swww";
 pub(super) const DEFAULT_WALLPAPER_DIR: &str = "Wallpapers";
-pub(super) const DEFAULT_WAVE_SIZE: (i32, i32, i32, i32) = (55, 60, 45, 50);
+pub(super) const DEFAULT_WAVE_SIZE: (u32, u32, u32, u32) = (70, 80, 35, 40);
 
 pub(super) const FALLBACK_FPS: u32 = 60;
 pub(super) const FALLBACK_RESOLUTION: Resolution = Resolution {

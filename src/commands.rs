@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Clone, Parser)]
-#[command(name = "Walrus", version = "0.1.1", about = "SWWW wrapper", long_about = None)]
+#[command(name = "Walrus", version = "0.1.2", about = "Convenient wrapper for SWWW with sensible defaults", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,

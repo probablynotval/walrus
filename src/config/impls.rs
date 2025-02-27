@@ -6,7 +6,7 @@ use std::{
     str::FromStr,
 };
 
-use log::{warn, LevelFilter};
+use log::{LevelFilter, warn};
 
 use super::{
     core::{Config, General, Transition},
@@ -87,7 +87,7 @@ impl Config {
         self.general().wallpaper_path()
     }
 
-    pub fn wave_size(&self) -> (i32, i32, i32, i32) {
+    pub fn wave_size(&self) -> (u32, u32, u32, u32) {
         self.transition().wave_size()
     }
 }
@@ -167,7 +167,7 @@ impl Transition {
         self.step.unwrap_or(DEFAULT_STEP)
     }
 
-    pub fn wave_size(&self) -> (i32, i32, i32, i32) {
+    pub fn wave_size(&self) -> (u32, u32, u32, u32) {
         self.wave_size.unwrap_or(DEFAULT_WAVE_SIZE)
     }
 }
