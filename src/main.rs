@@ -3,7 +3,7 @@
 use std::sync::mpsc;
 
 use clap::Parser;
-use log::{debug, error, warn, LevelFilter};
+use log::{LevelFilter, debug, error, warn};
 use walrus::{
     commands::{Cli, Commands},
     config::Config,
@@ -67,9 +67,7 @@ fn main() {
     })
     .expect("Error setting Ctrl-C handler");
 
-    if let Err(e) = ipc::setup_ipc(tx.clone()) {
-        error!("Failed to start IPC server: {e:#?}");
-        return;
-    }
+    let _ipc = ipc::setup_ipc(tx.clone());
+
     daemon.run(rx);
 }

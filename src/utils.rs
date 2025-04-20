@@ -100,7 +100,7 @@ pub fn get_dir_with<P: AsRef<Path>>(dir: Dirs, append_dir: P) -> Result<PathBuf,
 }
 
 pub fn get_app_dir_with<P: AsRef<Path>>(dir: Dirs, append_dir: P) -> Result<PathBuf, DirError> {
-    let path = get_dir(dir)?.join(append_dir).join(APPNAME);
+    let path = get_dir(dir)?.join(APPNAME).join(append_dir);
     if !path.exists() {
         return Err(DirError::DoesNotExist(path));
     }

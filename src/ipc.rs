@@ -1,22 +1,27 @@
 use std::{
-    fs,
+    fs::{self, File, OpenOptions},
     io::{self, Read, Write},
     marker::PhantomData,
-    os::unix::net::{UnixListener, UnixStream},
+    os::unix::{
+        fs::OpenOptionsExt,
+        net::{UnixListener, UnixStream},
+    },
     path::PathBuf,
+    process,
     sync::mpsc::Sender,
     thread,
 };
 
 use log::{debug, error, warn};
+use nix::fcntl::{Flock, FlockArg};
 
 use crate::{
     commands::Commands,
-    utils::{get_dir, Dirs},
+    utils::{self, Dirs},
 };
 
 impl Commands {
-    fn to_bytes(&self) -> Option<u8> {
+    fn as_byte(&self) -> Option<u8> {
         match self {
             Commands::Config => None,
             Commands::Next => Some(1),
@@ -43,30 +48,73 @@ impl Commands {
 
 pub struct IpcSocket<T> {
     socket_path: PathBuf,
+    guard: IpcGuard,
+    _lock: Option<Flock<File>>,
     _phantom: PhantomData<T>,
 }
 
 pub struct Server;
-pub struct Client;
-
-struct SocketGuard(PathBuf);
+struct Client;
 
 impl<T> IpcSocket<T> {
-    pub fn new(socket_path: impl Into<PathBuf>) -> Self {
+    fn new(socket_path: impl Into<PathBuf>) -> Self {
         Self {
             socket_path: socket_path.into(),
+            guard: IpcGuard::new(),
+            _lock: None,
             _phantom: PhantomData,
         }
     }
 
-    pub fn bind_default() -> io::Result<Self> {
-        let socket_path = Self::default_path()?;
+    fn bind_client() -> Self {
+        let runtime_dir = utils::get_dir(Dirs::Runtime).expect("Error getting runtime dir");
+        let default_path = runtime_dir.join("walrus");
 
-        Ok(Self::new(socket_path))
+        let bound_path = default_path
+            .exists()
+            .then_some(default_path)
+            .unwrap_or_else(|| PathBuf::from("/tmp").join("walrus"));
+
+        Self::new(bound_path)
     }
 
-    fn default_path() -> io::Result<PathBuf> {
-        let path = match get_dir(Dirs::Runtime) {
+    fn bind_server() -> Self {
+        let bound_path = Self::default_path();
+        let mut server = Self::new(&bound_path);
+
+        let runtime_dir = utils::get_dir(Dirs::Runtime).expect("Error getting runtime dir");
+
+        let lock_path = runtime_dir.join("walrus.lock");
+        let lock_file = OpenOptions::new()
+            .mode(0o640)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&lock_path)
+            .expect("Error creating lock file");
+        match Flock::lock(lock_file, FlockArg::LockExclusiveNonblock) {
+            Ok(flock) => {
+                debug!("Successfully acquired lock file");
+                server.guard.add_path(&bound_path);
+                server._lock = Some(flock);
+            }
+            Err((file, nix::Error::EWOULDBLOCK)) => {
+                drop(file);
+                error!("An instance is already running (lock file is locked)");
+                process::exit(1)
+            }
+            Err((file, e)) => {
+                drop(file);
+                error!("Error locking lock file: {e}");
+                process::exit(1)
+            }
+        };
+
+        server
+    }
+
+    fn default_path() -> PathBuf {
+        let path = match utils::get_dir(Dirs::Runtime) {
             Ok(path) => path,
             Err(e) => {
                 error!("{}", e);
@@ -75,34 +123,30 @@ impl<T> IpcSocket<T> {
             }
         };
 
-        // NOTE:
-        // I am assuming that /tmp exists.
-        // Probably a bad idea to try to create it anyway, wouldn't even have permission to.
-        // Not to mention if neither path exists, it's more likely than not a problem with the
-        // user's system.
-
-        debug!("Socket at: {:?}", path.join("walrus"));
-        Ok(path.join("walrus"))
+        path.join("walrus")
     }
 }
 
 impl IpcSocket<Server> {
-    pub fn start(&self, tx: Sender<Commands>) -> io::Result<()> {
+    fn start(&self, tx: Sender<Commands>) {
+        assert!(!self.socket_path.exists(), "Socket cleanup failed");
         if self.socket_path.exists() {
-            fs::remove_file(&self.socket_path)?;
+            debug!("Socket file already exists (cleanup may have failed)");
+
+            if let Err(e) = fs::remove_file(&self.socket_path) {
+                error!("Failed to remove socket file: {e}");
+                process::exit(1);
+            }
         }
 
-        let listener = UnixListener::bind(&self.socket_path)?;
-        let guard = SocketGuard(self.socket_path.clone());
+        let listener = UnixListener::bind(&self.socket_path).expect("Failed to bind socket");
 
         thread::spawn(move || {
-            let _guard = guard;
-
             for stream in listener.incoming() {
                 let mut stream = match stream {
                     Ok(stream) => stream,
                     Err(e) => {
-                        error!("Error accepting connection: {e:#?}");
+                        error!("Error accepting connection: {e}");
                         continue;
                     }
                 };
@@ -123,17 +167,14 @@ impl IpcSocket<Server> {
                 debug!("IPC received {:?} command", command);
                 let _ = tx.send(command);
             }
-            // NOTE: Socket file should be deleted since guard is dropped here
         });
-
-        Ok(())
     }
 }
 
 impl IpcSocket<Client> {
     fn send_command(&self, command: Commands) -> io::Result<()> {
         let mut stream = UnixStream::connect(&self.socket_path)?;
-        let Some(cmd) = command.to_bytes() else {
+        let Some(cmd) = command.as_byte() else {
             return Err(io::Error::new(
                 io::ErrorKind::Other,
                 "Failed to convert command to bytes",
@@ -144,26 +185,44 @@ impl IpcSocket<Client> {
     }
 }
 
-impl Drop for SocketGuard {
+struct IpcGuard {
+    paths: Vec<PathBuf>,
+}
+
+impl IpcGuard {
+    fn new() -> Self {
+        Self { paths: Vec::new() }
+    }
+
+    fn add_path(&mut self, path: impl Into<PathBuf>) {
+        self.paths.push(path.into());
+    }
+}
+
+impl Drop for IpcGuard {
     fn drop(&mut self) {
-        if self.0.exists() {
-            if let Err(e) = fs::remove_file(&self.0) {
-                error!("Failed to clean up socket {:?}: {e}", self.0);
+        for path in &self.paths {
+            if !path.exists() {
+                continue;
+            }
+            if let Err(e) = fs::remove_file(path) {
+                error!("Failed to clean up file {:?}: {e}", path);
             }
         }
     }
 }
 
-pub fn setup_ipc(tx: Sender<Commands>) -> io::Result<()> {
+pub fn setup_ipc(tx: Sender<Commands>) -> IpcSocket<Server> {
     debug!("Starting IPC server");
-    let server = IpcSocket::<Server>::bind_default()?;
-    server.start(tx)?;
-    Ok(())
+    let server = IpcSocket::<Server>::bind_server();
+    server.start(tx);
+
+    server
 }
 
 pub fn send_ipc_command(command: Commands) -> io::Result<()> {
     debug!("IPC sending {:?} command", command);
-    let client = IpcSocket::<Client>::bind_default()?;
+    let client = IpcSocket::<Client>::bind_client();
     client.send_command(command)
 }
 
@@ -177,12 +236,12 @@ mod tests {
     fn test_ipc_cmd() {
         let (tx, rx) = mpsc::channel();
 
-        setup_ipc(tx.clone()).expect("Failed to setup IPC");
+        setup_ipc(tx.clone());
 
         let cmd = Commands::Next;
-        let _ = tx.send(cmd.clone());
+        let _ = tx.send(cmd);
         let rx_cmd = rx.recv().unwrap();
 
-        assert_eq!(cmd.to_bytes().unwrap(), rx_cmd.to_bytes().unwrap());
+        assert_eq!(cmd.as_byte().unwrap(), rx_cmd.as_byte().unwrap());
     }
 }

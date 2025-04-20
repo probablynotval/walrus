@@ -877,6 +877,7 @@ dependencies = [
  "clap",
  "ctrlc",
  "log",
+ "nix",
  "notify",
  "rand",
  "serde",
