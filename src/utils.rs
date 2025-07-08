@@ -130,6 +130,49 @@ pub fn get_config_file<P: AsRef<Path>>(filename: P) -> Result<PathBuf, DirError>
     Ok(config_file)
 }
 
+pub fn init_term_logger(log_level: LevelFilter) -> Result<(), Box<dyn Error>> {
+    TermLogger::init(
+        log_level,
+        Config::default(),
+        TerminalMode::Mixed,
+        ColorChoice::Auto,
+    )?;
+
+    Ok(())
+}
+
+pub fn init_write_logger(log_level: LevelFilter) -> Result<PathBuf, Box<dyn Error>> {
+    let log_dir = match get_app_dir_with(Dirs::State, "logs") {
+        Ok(p) => p,
+        Err(DirError::DoesNotExist(path)) => {
+            fs::create_dir_all(&path).map_err(DirError::IoError)?;
+            path
+        }
+        Err(e @ (DirError::InvalidPath(_) | DirError::IoError(_) | DirError::MissingVar(_))) => {
+            error!("Not logging to file: {e}");
+            return Err(e.into());
+        }
+    };
+
+    let time = OffsetDateTime::now_local().unwrap_or_else(|e| {
+        error!("Failed to get local time offset: {e}");
+        warn!("Falling back to UTC");
+        OffsetDateTime::now_utc()
+    });
+
+    let log_name = time
+        .replace_nanosecond(0)
+        .expect("Error converting nanoseconds")
+        .format(&well_known::Rfc3339)
+        .expect("Invalid format")
+        + ".log";
+    let log_path = log_dir.join(log_name);
+
+    WriteLogger::init(log_level, Config::default(), File::create(&log_path)?)?;
+
+    Ok(log_path)
+}
+
 pub fn init_logger(log_level: LevelFilter) -> Result<(), Box<dyn Error>> {
     fn try_combined_logger(log_level: LevelFilter) -> Result<(), Box<dyn Error>> {
         let log_dir = match get_app_dir_with(Dirs::State, "logs") {
@@ -186,8 +229,8 @@ pub fn init_logger(log_level: LevelFilter) -> Result<(), Box<dyn Error>> {
                     Ok(())
                 }
                 Err(term_err) => Err(format!(
-                    "Failed to initialise logging:\n- CombinedLogger: {}, TermLogger: {}",
-                    comb_err, term_err
+                    "Failed to initialise logging:\n- CombinedLogger: {comb_err}, TermLogger: \
+                     {term_err}"
                 )
                 .into()),
             }

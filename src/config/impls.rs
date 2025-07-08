@@ -284,7 +284,7 @@ impl Display for Transition {
             .map(|f| f.to_string())
             .collect::<Vec<String>>()
             .join(", ");
-        writeln!(f, "flavour = [{}]", flavour_str)?;
+        writeln!(f, "flavour = [{flavour_str}]")?;
         writeln!(
             f,
             "fps = {}",
@@ -374,7 +374,7 @@ impl PartialOrd for HighestResolution<'_> {
 impl Display for ParseTransitionFlavourError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidFlavour(s) => writeln!(f, "Invalid transition type: {}", s),
+            Self::InvalidFlavour(s) => writeln!(f, "Invalid transition type: {s}"),
         }
     }
 }

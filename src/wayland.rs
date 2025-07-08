@@ -7,7 +7,7 @@ use smithay_client_toolkit::{
     registry_handlers,
 };
 use wayland_client::{
-    globals::registry_queue_init, protocol::wl_output, Connection, EventQueue, QueueHandle,
+    Connection, EventQueue, QueueHandle, globals::registry_queue_init, protocol::wl_output,
 };
 
 use crate::config;
@@ -63,56 +63,54 @@ impl OutputHandler for WaylandState {
     }
 
     fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, o: wl_output::WlOutput) {
-        if let Some(info) = self.output_state.info(&o) {
-            if let Some(mode) = info
+        if let Some(info) = self.output_state.info(&o)
+            && let Some(mode) = info
                 .modes
                 .iter()
                 .find(|m| m.current || m.preferred)
                 .or_else(|| info.modes.first())
-            {
-                let monitor = config::MonitorInfo {
-                    refresh_rate: mode.refresh_rate as f32 / 1000.0,
-                    resolution: config::Resolution {
-                        width: mode.dimensions.0,
-                        height: mode.dimensions.1,
-                    },
-                    id: info.id,
-                };
-                self.outputs.push(monitor);
-            }
+        {
+            let monitor = config::MonitorInfo {
+                refresh_rate: mode.refresh_rate as f32 / 1000.0,
+                resolution: config::Resolution {
+                    width: mode.dimensions.0,
+                    height: mode.dimensions.1,
+                },
+                id: info.id,
+            };
+            self.outputs.push(monitor);
         }
     }
 
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, o: wl_output::WlOutput) {
-        if let Some(info) = self.output_state.info(&o) {
-            if let Some(mode) = info
+        if let Some(info) = self.output_state.info(&o)
+            && let Some(mode) = info
                 .modes
                 .iter()
                 .find(|m| m.current || m.preferred)
                 .or_else(|| info.modes.first())
-            {
-                let monitor = config::MonitorInfo {
-                    refresh_rate: mode.refresh_rate as f32 / 1000.0,
-                    resolution: config::Resolution {
-                        width: mode.dimensions.0,
-                        height: mode.dimensions.1,
-                    },
-                    id: info.id,
-                };
+        {
+            let monitor = config::MonitorInfo {
+                refresh_rate: mode.refresh_rate as f32 / 1000.0,
+                resolution: config::Resolution {
+                    width: mode.dimensions.0,
+                    height: mode.dimensions.1,
+                },
+                id: info.id,
+            };
 
-                let exists = self.outputs.iter_mut().any(|existing| {
-                    if existing.id == info.id {
-                        existing.refresh_rate = monitor.refresh_rate;
-                        existing.resolution = monitor.resolution;
-                        true
-                    } else {
-                        false
-                    }
-                });
-
-                if !exists {
-                    self.outputs.push(monitor);
+            let exists = self.outputs.iter_mut().any(|existing| {
+                if existing.id == info.id {
+                    existing.refresh_rate = monitor.refresh_rate;
+                    existing.resolution = monitor.resolution;
+                    true
+                } else {
+                    false
                 }
+            });
+
+            if !exists {
+                self.outputs.push(monitor);
             }
         }
     }
@@ -148,7 +146,7 @@ mod tests {
         let outputs = wlhandle.get_outputs();
 
         assert!(!outputs.is_empty());
-        println!("{:#?}", outputs);
+        println!("{outputs:#?}");
     }
 
     #[test]

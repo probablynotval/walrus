@@ -12,32 +12,36 @@ use walrus::{
 };
 
 fn main() {
-    utils::init_logger(LevelFilter::Trace).unwrap_or_else(|e| eprintln!("{e}"));
-    log::set_max_level(LevelFilter::Info);
-
     let config = Config::new().unwrap_or_else(|e| {
         error!("Error in config: {e}");
         warn!("Falling back to default config...");
         Config::default()
     });
 
+    log::set_max_level(config.debug());
+    debug!("Logging with log level: {}", config.debug());
+
     let cli = Cli::parse();
     if let Some(cmd) = &cli.command {
+        utils::init_term_logger(LevelFilter::Trace)
+            .unwrap_or_else(|e| eprintln!("Error initialising terminal logger: {e}"));
+
         match cmd {
             Commands::Config => {
                 debug!("Printing config to stdout...");
                 return println!("{config}");
             }
             ipc_cmd => {
-                debug!("Attempting to send {:?} command via IPC...", ipc_cmd);
+                debug!("Attempting to send {ipc_cmd:?} command via IPC...");
                 return ipc::send_ipc_command(*ipc_cmd)
                     .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
             }
         }
     }
 
-    log::set_max_level(config.debug());
-    debug!("Logging with log level: {}", config.debug());
+    let file =
+        utils::init_write_logger(LevelFilter::Trace).expect("Error initialising file logger");
+    debug!("Logging to file: {}", file.display());
 
     let mut daemon = Daemon::new(config).expect("Fatal: failed to initialise Walrus Daemon");
     if daemon.queue.is_empty() {

@@ -70,16 +70,30 @@ impl<T> IpcSocket<T> {
         let runtime_dir = utils::get_dir(Dirs::Runtime).expect("Error getting runtime dir");
         let default_path = runtime_dir.join("walrus");
 
-        let bound_path = default_path
-            .exists()
-            .then_some(default_path)
-            .unwrap_or_else(|| PathBuf::from("/tmp").join("walrus"));
+        let bound_path = if default_path.exists() {
+            default_path
+        } else {
+            PathBuf::from("/tmp/walrus")
+        };
 
         Self::new(bound_path)
     }
 
     fn bind_server() -> Self {
-        let bound_path = Self::default_path();
+        fn default_path() -> PathBuf {
+            let path = match utils::get_dir(Dirs::Runtime) {
+                Ok(path) => path,
+                Err(e) => {
+                    error!("{}", e);
+                    warn!("Socket falling back to /tmp/walrus");
+                    PathBuf::from("/tmp")
+                }
+            };
+
+            path.join("walrus")
+        }
+
+        let bound_path = default_path();
         let mut server = Self::new(&bound_path);
 
         let runtime_dir = utils::get_dir(Dirs::Runtime).expect("Error getting runtime dir");
@@ -112,24 +126,10 @@ impl<T> IpcSocket<T> {
 
         server
     }
-
-    fn default_path() -> PathBuf {
-        let path = match utils::get_dir(Dirs::Runtime) {
-            Ok(path) => path,
-            Err(e) => {
-                error!("{}", e);
-                warn!("Socket falling back to /tmp/walrus");
-                PathBuf::from("/tmp")
-            }
-        };
-
-        path.join("walrus")
-    }
 }
 
 impl IpcSocket<Server> {
     fn start(&self, tx: Sender<Commands>) {
-        assert!(!self.socket_path.exists(), "Socket cleanup failed");
         if self.socket_path.exists() {
             debug!("Socket file already exists (cleanup may have failed)");
 
@@ -175,10 +175,7 @@ impl IpcSocket<Client> {
     fn send_command(&self, command: Commands) -> io::Result<()> {
         let mut stream = UnixStream::connect(&self.socket_path)?;
         let Some(cmd) = command.as_byte() else {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Failed to convert command to bytes",
-            ));
+            return Err(io::Error::other("Failed to convert command to bytes"));
         };
         stream.write_all(&[cmd])?;
         Ok(())
@@ -222,6 +219,7 @@ pub fn setup_ipc(tx: Sender<Commands>) -> IpcSocket<Server> {
 
 pub fn send_ipc_command(command: Commands) -> io::Result<()> {
     debug!("IPC sending {:?} command", command);
+
     let client = IpcSocket::<Client>::bind_client();
     client.send_command(command)
 }

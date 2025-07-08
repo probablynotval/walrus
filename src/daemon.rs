@@ -250,7 +250,7 @@ impl Daemon {
 impl Display for Daemon {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (i, wallpaper) in self.queue.iter().enumerate() {
-            writeln!(f, "{} - {}", i, wallpaper)?;
+            writeln!(f, "{i} - {wallpaper}")?;
         }
         Ok(())
     }
