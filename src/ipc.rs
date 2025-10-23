@@ -24,24 +24,15 @@ impl Commands {
     fn as_byte(&self) -> Option<u8> {
         match self {
             Commands::Config => None,
-            Commands::Next => Some(1),
-            Commands::Pause => Some(2),
-            Commands::Previous => Some(3),
-            Commands::Resume => Some(4),
-            Commands::Reload => Some(5),
-            Commands::Shutdown => Some(100),
+            cmd => Some((*cmd).into()),
         }
     }
 
     fn from_byte(byte: u8) -> Option<Commands> {
-        match byte {
-            1 => Some(Commands::Next),
-            2 => Some(Commands::Pause),
-            3 => Some(Commands::Previous),
-            4 => Some(Commands::Resume),
-            5 => Some(Commands::Reload),
-            100 => Some(Commands::Shutdown),
-            _ => None,
+        match Self::try_from(byte) {
+            Ok(Commands::Config) => None,
+            Ok(cmd) => Some(cmd),
+            Err(_) => unreachable!("Can't be sent a non-existant byte value"),
         }
     }
 }

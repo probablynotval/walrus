@@ -39,9 +39,10 @@ fn main() {
         }
     }
 
-    let file =
-        utils::init_write_logger(LevelFilter::Trace).expect("Error initialising file logger");
-    debug!("Logging to file: {}", file.display());
+    utils::init_logger(LevelFilter::Trace).expect("Error initialising logger");
+    // let file =
+    //     utils::init_write_logger(LevelFilter::Trace).expect("Error initialising file logger");
+    // debug!("Logging to file: {}", file.display());
 
     let mut daemon = Daemon::new(config).expect("Fatal: failed to initialise Walrus Daemon");
     if daemon.queue.is_empty() {

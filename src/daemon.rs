@@ -1,6 +1,8 @@
 use std::{
     fmt::{self, Display},
-    path::PathBuf,
+    fs,
+    os::unix,
+    path::{Path, PathBuf},
     process::Command,
     sync::mpsc::{self, Receiver},
     time::Duration,
@@ -8,6 +10,7 @@ use std::{
 
 use log::{debug, error, info, warn};
 use rand::{Rng, SeedableRng, rngs::SmallRng, seq::SliceRandom};
+use same_file::is_same_file;
 use walkdir::WalkDir;
 
 use crate::{
@@ -22,22 +25,30 @@ pub struct Daemon {
     pub config: Config,
     pub index: usize,
     pub paused: bool,
-    pub queue: Vec<String>,
-    // TODO: this stuff would probably move to the TransitionBuilder?
+    pub queue: Vec<PathBuf>,
     rng: SmallRng,
 }
 
 impl Daemon {
     pub fn new(config: Config) -> Option<Self> {
         let directory = config.wallpaper_path();
-        let walker = WalkDir::new(directory);
-        let queue: Vec<String> = walker
+
+        let queue = WalkDir::new(directory)
             .follow_links(true)
             .into_iter()
             .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                !entry
+                    .path()
+                    .components()
+                    .nth(config.wallpaper_path().components().count())
+                    .and_then(|c| c.as_os_str().to_str())
+                    .map(|s| s == ".like" || s == ".dislike")
+                    .unwrap_or(false)
+            })
             .filter(|entry| entry.path().is_file())
-            .map(|entry| entry.path().to_string_lossy().to_string())
-            .collect();
+            .map(|entry| entry.path().to_owned())
+            .collect::<Vec<_>>();
         debug!("Starting with Config: {}", config);
         Some(Self {
             config,
@@ -64,6 +75,7 @@ impl Daemon {
 
             match rx.recv_timeout(timeout) {
                 Ok(Commands::Config) => unreachable!(),
+                Ok(cmd @ Commands::Dislike) | Ok(cmd @ Commands::Like) => self.like_dislike(cmd),
                 Ok(Commands::Next) => {
                     debug!("Received Next command");
                     self.next_wallpaper();
@@ -104,6 +116,7 @@ impl Daemon {
                 /*
                  * Unsure when this can happen. One such case is if there is an instance of walrus
                  * already running and another one is started.
+                 * Since file locking was later implemented, that should not happen.
                  */
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     error!("Timeout: channel disconnected");
@@ -115,8 +128,66 @@ impl Daemon {
 
     fn current_wallpaper(&mut self) {
         if let Some(wallpaper) = self.queue.get(self.index) {
-            info!("Setting wallpaper: {wallpaper}");
-            self.set_wallpaper(wallpaper.into());
+            info!("Setting wallpaper: {}", wallpaper.display());
+            self.set_wallpaper(wallpaper.clone().as_path());
+        }
+    }
+
+    fn like_dislike(&mut self, arg: Commands) {
+        let val = match arg {
+            Commands::Dislike => "dislike",
+            Commands::Like => "like",
+            _ => panic!("Incorrect enum member passed"),
+        };
+
+        let other = match arg {
+            Commands::Dislike => "like",
+            Commands::Like => "dislike",
+            _ => panic!("Incorrect enum member passed"),
+        };
+
+        let base_path = self.config.wallpaper_path();
+
+        if let Some(src) = self.queue.get(self.index) {
+            // Ensure that a file can not be in both ".like" and ".dislike".
+            let other_dir = self.config.wallpaper_path().join(format!(".{other}"));
+            if other_dir.is_dir()
+                && WalkDir::new(other_dir)
+                    .follow_links(true)
+                    .into_iter()
+                    .filter(|e| e.is_ok())
+                    .any(|e| is_same_file(src, e.unwrap().path()).unwrap())
+            {
+                info!("File already exists in the opposite category");
+                return;
+            }
+
+            let dir = base_path.join(format!(".{val}"));
+            if let Err(e) = fs::create_dir_all(&dir) {
+                error!("Failed to create .{val} directory: {e}");
+                panic!("{e}");
+            }
+
+            let rel = src
+                .strip_prefix(&base_path)
+                .expect("Wallpaper prefix does not match base path, might be symlink issue?");
+            let dst = dir.join(rel);
+
+            if let Some(parent) = dst.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+
+            debug!(
+                "Symlinking...\nFrom path: {}\nTo path: {}",
+                src.display(),
+                dst.display()
+            );
+
+            if let Err(e) = unix::fs::symlink(src, dst) {
+                error!("Error adding to .{val} directory: {e}")
+            }
+
+            self.next_wallpaper();
         }
     }
 
@@ -180,18 +251,17 @@ impl Daemon {
                 false => decrement_index(self.index, self.queue.len()),
             };
             if let Some(wallpaper) = self.queue.get(self.index) {
-                let path = PathBuf::from(wallpaper);
-                if !path.exists() {
+                if !wallpaper.exists() {
                     warn!(
                         "File not found, removing from queue: {}",
-                        path.to_str().unwrap_or_default()
+                        wallpaper.to_str().unwrap_or_default()
                     );
                     self.queue.remove(self.index);
                     self.index -= 1;
                     continue;
                 }
-                info!("Setting wallpaper: {wallpaper}");
-                self.set_wallpaper(wallpaper.into());
+                info!("Setting wallpaper: {}", wallpaper.display());
+                self.set_wallpaper(wallpaper.clone().as_path());
                 return;
             }
             attempts += 1
@@ -219,7 +289,7 @@ impl Daemon {
         self.index = 0;
     }
 
-    fn set_wallpaper(&mut self, path: String) {
+    fn set_wallpaper(&mut self, path: &Path) {
         let args = self.new_transition();
 
         let _ = Command::new(self.config.swww_path())
@@ -230,7 +300,7 @@ impl Daemon {
             .wait();
     }
 
-    // NOTE:
+    // WARN:
     // Printing debug information from this function can be confusing because it might be called
     // multiple times. The reason is because the watcher polls and calls this function every time
     // it does that. For example Neovim uses atomic file writing, but other editors might do this
@@ -250,7 +320,7 @@ impl Daemon {
 impl Display for Daemon {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (i, wallpaper) in self.queue.iter().enumerate() {
-            writeln!(f, "{i} - {wallpaper}")?;
+            writeln!(f, "{i} - {}", wallpaper.display())?;
         }
         Ok(())
     }
