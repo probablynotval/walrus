@@ -250,14 +250,6 @@ pub fn normalize_duration(base_duration: f64, res: Resolution, angle_degrees: f3
     base_duration * ratio
 }
 
-pub fn decrement_index(index: usize, qlen: usize) -> usize {
-    (index + qlen - 1) % qlen
-}
-
-pub fn increment_index(index: usize, qlen: usize) -> usize {
-    (index + 1) % qlen
-}
-
 pub fn deserialize_flavour<'de, D>(d: D) -> Result<Option<Vec<TransitionFlavour>>, D::Error>
 where
     D: Deserializer<'de>,

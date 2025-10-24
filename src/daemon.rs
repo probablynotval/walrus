@@ -18,55 +18,44 @@ use crate::{
     config::{Config, TransitionFlavour},
     ipc::send_ipc_command,
     transition::{Pos, TransitionArgBuilder, WaveSize},
-    utils::{decrement_index, increment_index, normalize_duration},
+    utils::normalize_duration,
 };
 
+#[derive(Debug)]
 pub struct Daemon {
     pub config: Config,
-    pub index: usize,
     pub paused: bool,
-    pub queue: Vec<PathBuf>,
+    pub queue: Queue,
     rng: SmallRng,
 }
 
 impl Daemon {
-    pub fn new(config: Config) -> Option<Self> {
+    pub fn new(config: Config) -> Self {
         let directory = config.wallpaper_path();
 
-        let queue = WalkDir::new(directory)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| {
-                !entry
-                    .path()
-                    .components()
-                    .nth(config.wallpaper_path().components().count())
-                    .and_then(|c| c.as_os_str().to_str())
-                    .map(|s| s == ".like" || s == ".dislike")
-                    .unwrap_or(false)
-            })
-            .filter(|entry| entry.path().is_file())
-            .map(|entry| entry.path().to_owned())
-            .collect::<Vec<_>>();
         debug!("Starting with Config: {}", config);
-        Some(Self {
+        Self {
             config,
             paused: false,
-            queue,
-            index: 0,
+            queue: Queue::new(&directory),
             rng: SmallRng::from_os_rng(),
-        })
+        }
     }
 
     pub fn run(&mut self, rx: Receiver<Commands>) {
+        // TODO: have different sorting options (enum and match)
         if self.config.shuffle() {
-            self.shuffle_queue();
+            self.queue.shuffle();
         } else {
             self.queue.sort();
         }
         debug!("{:#?}", self.queue);
-        self.current_wallpaper();
+
+        // Set wallpaper initially.
+        if let Some(wallpaper) = self.queue.get_current() {
+            info!("Setting wallpaper: {}", wallpaper.display());
+            self.set_wallpaper(wallpaper.clone().as_path());
+        }
 
         let mut cont = true;
         while cont {
@@ -126,13 +115,8 @@ impl Daemon {
         }
     }
 
-    fn current_wallpaper(&mut self) {
-        if let Some(wallpaper) = self.queue.get(self.index) {
-            info!("Setting wallpaper: {}", wallpaper.display());
-            self.set_wallpaper(wallpaper.clone().as_path());
-        }
-    }
-
+    // TODO: This method has too many responsibilities. It could also be more generic to make the
+    // app more flexible and less opinionated.
     fn like_dislike(&mut self, arg: Commands) {
         let val = match arg {
             Commands::Dislike => "dislike",
@@ -148,7 +132,7 @@ impl Daemon {
 
         let base_path = self.config.wallpaper_path();
 
-        if let Some(src) = self.queue.get(self.index) {
+        if let Some(src) = self.queue.get_current() {
             // Ensure that a file can not be in both ".like" and ".dislike".
             let other_dir = self.config.wallpaper_path().join(format!(".{other}"));
             if other_dir.is_dir()
@@ -220,6 +204,7 @@ impl Daemon {
             .with_step(step)
             .with_bezier(bezier);
 
+        // This is a potentially potentially confusing reassignment?
         let builder = match flavour {
             TransitionFlavour::Wipe => builder.with_angle(angle),
             TransitionFlavour::Wave => {
@@ -242,51 +227,41 @@ impl Daemon {
         builder.build()
     }
 
-    fn update_index(&mut self, increment: bool) {
-        let mut attempts = 0;
+    fn advance_wallpaper(&mut self, advance_fn: fn(&mut Queue)) {
+        advance_fn(&mut self.queue);
 
-        while attempts < self.queue.len() {
-            self.index = match increment {
-                true => increment_index(self.index, self.queue.len()),
-                false => decrement_index(self.index, self.queue.len()),
-            };
-            if let Some(wallpaper) = self.queue.get(self.index) {
-                if !wallpaper.exists() {
-                    warn!(
-                        "File not found, removing from queue: {}",
-                        wallpaper.to_str().unwrap_or_default()
-                    );
-                    self.queue.remove(self.index);
-                    self.index -= 1;
-                    continue;
-                }
-                info!("Setting wallpaper: {}", wallpaper.display());
-                self.set_wallpaper(wallpaper.clone().as_path());
-                return;
-            }
-            attempts += 1
+        if let Some(current) = self.queue.get_current()
+            && !current.exists()
+        {
+            warn!("Wallpaper in this position is missing, removing it from queue.");
+            self.queue.cleanup_invalid_files();
         }
 
-        error!("No valid path found in queue, shutting down");
-        let _ = send_ipc_command(Commands::Shutdown);
+        if let Some(wallpaper) = self.queue.get_current() {
+            let wallpaper = wallpaper.clone();
+            info!("Setting wallpaper: {}", wallpaper.display());
+            self.set_wallpaper(wallpaper.as_path())
+        } else {
+            error!("No valid path found in queue, shutting down");
+            let _ = send_ipc_command(Commands::Shutdown);
+        }
     }
 
     fn next_wallpaper(&mut self) {
-        self.update_index(true);
+        self.advance_wallpaper(Queue::next);
     }
 
+    fn previous_wallpaper(&mut self) {
+        self.advance_wallpaper(Queue::previous);
+    }
+
+    // TODO: Play/Pause could also be a toggle instead and just flip self.paused.
     fn pause(&mut self) {
         self.paused = true;
     }
 
-    fn previous_wallpaper(&mut self) {
-        self.update_index(false);
-    }
-
-    fn shuffle_queue(&mut self) {
-        let mut rng = rand::rng();
-        self.queue.shuffle(&mut rng);
-        self.index = 0;
+    fn resume(&mut self) {
+        self.paused = false;
     }
 
     fn set_wallpaper(&mut self, path: &Path) {
@@ -296,7 +271,7 @@ impl Daemon {
             .args(args)
             .arg(path)
             .spawn()
-            .expect("Error spawning process")
+            .expect("Error spawning sww process")
             .wait();
     }
 
@@ -307,17 +282,96 @@ impl Daemon {
     // differently so the debug information depends on how the file is edited.
     fn reload_config(&mut self) {
         info!("Reloading config...");
-        let config = Config::new().unwrap_or_default();
+        let config = Config::new().unwrap_or_else(|e| {
+            error!("Error in config: {e}");
+            warn!("Falling back to default config...");
+            Config::default()
+        });
         self.config = config;
         log::set_max_level(self.config.debug());
-    }
-
-    fn resume(&mut self) {
-        self.paused = false;
     }
 }
 
 impl Display for Daemon {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{}", self.queue)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct Queue {
+    queue: Vec<PathBuf>,
+    index: usize,
+}
+
+impl Queue {
+    fn new(dir: &Path) -> Self {
+        Self {
+            queue: WalkDir::new(dir)
+                .follow_links(true)
+                .into_iter()
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| {
+                    !entry
+                        .path()
+                        .components()
+                        .nth(dir.components().count())
+                        .and_then(|c| c.as_os_str().to_str())
+                        .map(|s| s == ".like" || s == ".dislike")
+                        .unwrap_or(false)
+                })
+                .filter(|entry| entry.path().is_file())
+                .map(|entry| entry.path().to_owned())
+                .collect::<Vec<_>>(),
+            index: 0,
+        }
+    }
+
+    fn shuffle(&mut self) {
+        let mut rng = rand::rng();
+        // Might be confusing that he method is called shuffle so this kinda looks like a recursive call.
+        self.queue.shuffle(&mut rng);
+        self.index = 0;
+    }
+
+    fn sort(&mut self) {
+        self.queue.sort();
+    }
+
+    fn get_current(&self) -> Option<&PathBuf> {
+        self.queue.get(self.index)
+    }
+
+    fn next(&mut self) {
+        if !self.queue.is_empty() {
+            self.index = (self.index + 1) % self.queue.len()
+        }
+    }
+
+    fn previous(&mut self) {
+        if !self.queue.is_empty() {
+            self.index = (self.index + self.queue.len() - 1) % self.queue.len()
+        }
+    }
+
+    fn cleanup_invalid_files(&mut self) -> bool {
+        let inital_len = self.queue.len();
+        self.queue.retain(|path| path.exists());
+
+        if !self.queue.is_empty() {
+            self.index = self.index.min(self.queue.len() - 1);
+        }
+
+        self.queue.len() < inital_len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty()
+    }
+}
+
+impl Display for Queue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (i, wallpaper) in self.queue.iter().enumerate() {
             writeln!(f, "{i} - {}", wallpaper.display())?;

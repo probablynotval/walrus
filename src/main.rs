@@ -44,7 +44,7 @@ fn main() {
     //     utils::init_write_logger(LevelFilter::Trace).expect("Error initialising file logger");
     // debug!("Logging to file: {}", file.display());
 
-    let mut daemon = Daemon::new(config).expect("Fatal: failed to initialise Walrus Daemon");
+    let mut daemon = Daemon::new(config);
     if daemon.queue.is_empty() {
         error!("Queue is empty, exiting...");
         return;
