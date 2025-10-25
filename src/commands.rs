@@ -4,8 +4,10 @@ use bincode::config;
 use clap::Parser;
 use clap::Subcommand;
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(Clone, Parser)]
-#[command(name = "Walrus", version = "0.1.2", about = "Convenient wrapper for swww with sensible defaults", long_about = None)]
+#[command(name = "Walrus", version = VERSION, about = "Convenient wrapper for swww with sensible defaults", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
