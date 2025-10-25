@@ -1,18 +1,18 @@
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
-    marker::PhantomData,
+    ops::ControlFlow,
     os::unix::{
         fs::OpenOptionsExt,
         net::{UnixListener, UnixStream},
     },
-    path::PathBuf,
+    path::{Path, PathBuf},
     process,
     sync::mpsc::Sender,
-    thread,
+    thread::{self, JoinHandle},
 };
 
-use log::{debug, error, warn};
+use log::{debug, error};
 use nix::fcntl::{Flock, FlockArg};
 
 use crate::{
@@ -20,107 +20,28 @@ use crate::{
     utils::{self, Dirs},
 };
 
-impl Commands {
-    fn as_byte(&self) -> Option<u8> {
-        match self {
-            Commands::Config => None,
-            cmd => Some((*cmd).into()),
-        }
-    }
-
-    fn from_byte(byte: u8) -> Option<Commands> {
-        match Self::try_from(byte) {
-            Ok(Commands::Config) => None,
-            Ok(cmd) => Some(cmd),
-            Err(_) => unreachable!("Can't be sent a non-existant byte value"),
-        }
-    }
-}
-
-pub struct IpcSocket<T> {
+pub struct IpcServer {
     socket_path: PathBuf,
-    guard: IpcGuard,
+    // Guard ensures we always cleanup the socket file: $XDG_RUNTIME_DIR/walrus.
+    _guard: IpcGuard,
+    // To hold the lock for the entire lifetime of the struct.
     _lock: Option<Flock<File>>,
-    _phantom: PhantomData<T>,
 }
 
-pub struct Server;
-struct Client;
+impl IpcServer {
+    fn new(socket_path: PathBuf, lock_path: PathBuf) -> Self {
+        let flock = acquire_lock(&lock_path);
+        let mut guard = IpcGuard::new();
+        guard.add_path(&socket_path);
 
-impl<T> IpcSocket<T> {
-    fn new(socket_path: impl Into<PathBuf>) -> Self {
         Self {
-            socket_path: socket_path.into(),
-            guard: IpcGuard::new(),
-            _lock: None,
-            _phantom: PhantomData,
+            socket_path,
+            _guard: guard,
+            _lock: Some(flock),
         }
     }
 
-    fn bind_client() -> Self {
-        let runtime_dir = utils::get_dir(Dirs::Runtime).expect("Error getting runtime dir");
-        let default_path = runtime_dir.join("walrus");
-
-        let bound_path = if default_path.exists() {
-            default_path
-        } else {
-            PathBuf::from("/tmp/walrus")
-        };
-
-        Self::new(bound_path)
-    }
-
-    fn bind_server() -> Self {
-        fn default_path() -> PathBuf {
-            let path = match utils::get_dir(Dirs::Runtime) {
-                Ok(path) => path,
-                Err(e) => {
-                    error!("{}", e);
-                    warn!("Socket falling back to /tmp/walrus");
-                    PathBuf::from("/tmp")
-                }
-            };
-
-            path.join("walrus")
-        }
-
-        let bound_path = default_path();
-        let mut server = Self::new(&bound_path);
-
-        let runtime_dir = utils::get_dir(Dirs::Runtime).expect("Error getting runtime dir");
-
-        let lock_path = runtime_dir.join("walrus.lock");
-        let lock_file = OpenOptions::new()
-            .mode(0o640)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&lock_path)
-            .expect("Error creating lock file");
-        match Flock::lock(lock_file, FlockArg::LockExclusiveNonblock) {
-            Ok(flock) => {
-                debug!("Successfully acquired lock file");
-                server.guard.add_path(&bound_path);
-                server._lock = Some(flock);
-            }
-            Err((file, nix::Error::EWOULDBLOCK)) => {
-                drop(file);
-                error!("An instance is already running (lock file is locked)");
-                process::exit(1)
-            }
-            Err((file, e)) => {
-                drop(file);
-                error!("Error locking lock file: {e}");
-                process::exit(1)
-            }
-        };
-
-        server
-    }
-}
-
-impl IpcSocket<Server> {
-    fn start(&self, tx: Sender<Commands>) {
+    fn start(&self, tx: Sender<Commands>) -> JoinHandle<()> {
         if self.socket_path.exists() {
             debug!("Socket file already exists (cleanup may have failed)");
 
@@ -134,41 +55,41 @@ impl IpcSocket<Server> {
 
         thread::spawn(move || {
             for stream in listener.incoming() {
-                let mut stream = match stream {
-                    Ok(stream) => stream,
-                    Err(e) => {
-                        error!("Error accepting connection: {e}");
-                        continue;
-                    }
-                };
-
-                let mut buffer = [0; 1];
-                if stream.read_exact(&mut buffer).is_err() {
-                    continue;
-                }
-
-                let Some(command) = Commands::from_byte(buffer[0]) else {
+                let Ok(mut stream) = stream else {
+                    error!("Error accepting connection: {}", stream.unwrap_err());
                     continue;
                 };
 
-                if let Commands::Config = command {
-                    continue;
+                if parse_stream(&mut stream, &tx).is_break() {
+                    break;
                 }
-
-                debug!("IPC received {:?} command", command);
-                let _ = tx.send(command);
             }
-        });
+        })
     }
 }
 
-impl IpcSocket<Client> {
-    fn send_command(&self, command: Commands) -> io::Result<()> {
+// This abstraction mostly exists for organisation purposes. I don't want to inline it because it
+// makes the protocol logic untestable.
+struct IpcClient {
+    socket_path: PathBuf,
+}
+
+impl IpcClient {
+    fn new(socket_path: PathBuf) -> Self {
+        Self { socket_path }
+    }
+
+    fn send(&self, command: Commands) -> io::Result<()> {
         let mut stream = UnixStream::connect(&self.socket_path)?;
-        let Some(cmd) = command.as_byte() else {
-            return Err(io::Error::other("Failed to convert command to bytes"));
-        };
-        stream.write_all(&[cmd])?;
+        let cmd = command
+            .to_bytes()
+            .ok_or(io::Error::other("Failed to convert command to bytes"))?;
+
+        // Bincode uses variable length messages in little-endian order with standard config.
+        // For my case, most of the enum variants should be u8. I'm using u16 for the big ones.
+        let len = (cmd.len() as u16).to_le_bytes();
+        stream.write_all(&len)?;
+        stream.write_all(&cmd)?;
         Ok(())
     }
 }
@@ -200,9 +121,71 @@ impl Drop for IpcGuard {
     }
 }
 
-pub fn setup_ipc(tx: Sender<Commands>) -> IpcSocket<Server> {
+fn acquire_lock(lock_path: &Path) -> Flock<File> {
+    let lock_file = OpenOptions::new()
+        .mode(0o640)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(lock_path)
+        .expect("Error creating lock file");
+    match Flock::lock(lock_file, FlockArg::LockExclusiveNonblock) {
+        Ok(flock) => {
+            debug!("Successfully acquired lock file");
+            flock
+        }
+        Err((_, nix::Error::EWOULDBLOCK)) => {
+            error!("An instance is already running (lock file is locked)");
+            process::exit(1)
+        }
+        Err((_, e)) => {
+            error!("Error locking lock file: {e}");
+            process::exit(1)
+        }
+    }
+}
+
+fn parse_stream<R: Read>(stream: &mut R, tx: &Sender<Commands>) -> ControlFlow<()> {
+    let mut len_buffer = [0u8; 2];
+    if let Err(e) = stream.read_exact(&mut len_buffer) {
+        error!("Error reading length prefix: {e}");
+        return ControlFlow::Continue(());
+    }
+    let len = u16::from_le_bytes(len_buffer);
+
+    let mut cmd_buffer = vec![0u8; len.into()];
+    if let Err(e) = stream.read_exact(&mut cmd_buffer) {
+        error!("Error reading command bytes: {e}");
+        return ControlFlow::Continue(());
+    }
+
+    if let Some(command) = Commands::from_bytes(&cmd_buffer) {
+        debug!("IPC received {:?} command", command);
+        let _ = tx.send(command.clone());
+
+        return match command {
+            Commands::Shutdown => ControlFlow::Break(()),
+            _ => ControlFlow::Continue(()),
+        };
+    }
+
+    ControlFlow::Continue(())
+}
+
+fn get_paths() -> (PathBuf, PathBuf) {
+    let runtime_dir = utils::get_dir(Dirs::Runtime).unwrap_or_else(|e| {
+        error!("Error getting runtime directory: {}", e);
+        process::exit(1)
+    });
+    let socket_path = runtime_dir.join("walrus");
+    let lock_path = runtime_dir.join("walrus.lock");
+    (socket_path, lock_path)
+}
+
+pub fn setup_ipc(tx: Sender<Commands>) -> IpcServer {
     debug!("Starting IPC server");
-    let server = IpcSocket::<Server>::bind_server();
+    let (socket_path, lock_path) = get_paths();
+    let server = IpcServer::new(socket_path, lock_path);
     server.start(tx);
 
     server
@@ -211,26 +194,99 @@ pub fn setup_ipc(tx: Sender<Commands>) -> IpcSocket<Server> {
 pub fn send_ipc_command(command: Commands) -> io::Result<()> {
     debug!("IPC sending {:?} command", command);
 
-    let client = IpcSocket::<Client>::bind_client();
-    client.send_command(command)
+    let (socket_path, _) = get_paths();
+
+    let client = IpcClient::new(socket_path);
+    client.send(command)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::mpsc;
+    use std::sync::{Mutex, mpsc};
 
     use super::*;
 
+    // These tests will panic if run in parallel, so I'm using a Mutex to ensure they don't.
+    // The reason this works is because the call to .lock() is blocking.
+    static LOCK: Mutex<()> = Mutex::new(());
+
+    // I'm also using the JoinHandle returned in these tests to ensure that the thread spawned by
+    // the IPC server doesn't become detached and keep running. This doesn't matter in the main
+    // application because it will be cleaned up by the OS.
+
+    // NOTE: These tests are kinda outside the scope of what unit tests should be. I let it stay
+    // for now but I might want to make these unit tests in the future.
+
     #[test]
     fn test_ipc_cmd() {
+        let _lock = LOCK.lock().unwrap();
+
         let (tx, rx) = mpsc::channel();
 
-        setup_ipc(tx.clone());
+        let (socket_path, lock_path) = get_paths();
+        let server = IpcServer::new(socket_path.clone(), lock_path);
+        let handle = server.start(tx.clone());
 
         let cmd = Commands::Next;
-        let _ = tx.send(cmd);
+        let client = IpcClient::new(socket_path);
+        client.send(cmd.clone()).unwrap();
+
         let rx_cmd = rx.recv().unwrap();
 
-        assert_eq!(cmd.as_byte().unwrap(), rx_cmd.as_byte().unwrap());
+        assert_eq!(cmd.to_bytes(), rx_cmd.to_bytes());
+
+        client.send(Commands::Shutdown).unwrap();
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_ipc_cmd_data() {
+        let _lock = LOCK.lock().unwrap();
+
+        let (tx, rx) = mpsc::channel();
+
+        let (socket_path, lock_path) = get_paths();
+        let server = IpcServer::new(socket_path.clone(), lock_path);
+        let handle = server.start(tx.clone());
+
+        let cmd = Commands::Categorise {
+            category: "Favourites".into(),
+        };
+        let client = IpcClient::new(socket_path);
+        client.send(cmd.clone()).unwrap();
+
+        let rx_cmd = rx.recv().unwrap();
+
+        assert_eq!(cmd.to_bytes(), rx_cmd.to_bytes());
+
+        client.send(Commands::Shutdown).unwrap();
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_stream_parsing() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+        let (tx, rx) = mpsc::channel();
+
+        let cmds = [
+            Commands::Next,
+            Commands::Previous,
+            Commands::Pause,
+            Commands::Resume,
+            Commands::Reload,
+        ];
+
+        for cmd in cmds {
+            let bytes = cmd.to_bytes().unwrap();
+            let len = (bytes.len() as u16).to_le_bytes();
+            client.write_all(&len).unwrap();
+            client.write_all(&bytes).unwrap();
+
+            let control_flow = parse_stream(&mut server, &tx);
+            assert!(!control_flow.is_break());
+
+            let received = rx.recv().unwrap();
+            assert_eq!(cmd.to_bytes(), received.to_bytes());
+        }
     }
 }

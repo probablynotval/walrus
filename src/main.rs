@@ -33,16 +33,13 @@ fn main() {
             }
             ipc_cmd => {
                 debug!("Attempting to send {ipc_cmd:?} command via IPC...");
-                return ipc::send_ipc_command(*ipc_cmd)
+                return ipc::send_ipc_command(ipc_cmd.clone())
                     .unwrap_or_else(|e| error!("Error sending command to running instance: {e}"));
             }
         }
     }
 
     utils::init_logger(LevelFilter::Trace).expect("Error initialising logger");
-    // let file =
-    //     utils::init_write_logger(LevelFilter::Trace).expect("Error initialising file logger");
-    // debug!("Logging to file: {}", file.display());
 
     let mut daemon = Daemon::new(config);
     if daemon.queue.is_empty() {

@@ -10,7 +10,6 @@ use std::{
 
 use log::{debug, error, info, warn};
 use rand::{Rng, SeedableRng, rngs::SmallRng, seq::SliceRandom};
-use same_file::is_same_file;
 use walkdir::WalkDir;
 
 use crate::{
@@ -64,7 +63,9 @@ impl Daemon {
 
             match rx.recv_timeout(timeout) {
                 Ok(Commands::Config) => unreachable!(),
-                Ok(cmd @ Commands::Dislike) | Ok(cmd @ Commands::Like) => self.like_dislike(cmd),
+                Ok(Commands::Categorise { category }) => {
+                    self.create_category_symlink(self.queue.get_current().unwrap(), &category);
+                }
                 Ok(Commands::Next) => {
                     debug!("Received Next command");
                     self.next_wallpaper();
@@ -115,63 +116,31 @@ impl Daemon {
         }
     }
 
-    // TODO: This method has too many responsibilities. It could also be more generic to make the
-    // app more flexible and less opinionated.
-    fn like_dislike(&mut self, arg: Commands) {
-        let val = match arg {
-            Commands::Dislike => "dislike",
-            Commands::Like => "like",
-            _ => panic!("Incorrect enum member passed"),
-        };
-
-        let other = match arg {
-            Commands::Dislike => "like",
-            Commands::Like => "dislike",
-            _ => panic!("Incorrect enum member passed"),
-        };
-
+    fn create_category_symlink(&self, src: &Path, category: &str) {
         let base_path = self.config.wallpaper_path();
+        let dir = base_path.join(format!(".{category}"));
 
-        if let Some(src) = self.queue.get_current() {
-            // Ensure that a file can not be in both ".like" and ".dislike".
-            let other_dir = self.config.wallpaper_path().join(format!(".{other}"));
-            if other_dir.is_dir()
-                && WalkDir::new(other_dir)
-                    .follow_links(true)
-                    .into_iter()
-                    .filter(|e| e.is_ok())
-                    .any(|e| is_same_file(src, e.unwrap().path()).unwrap())
-            {
-                info!("File already exists in the opposite category");
-                return;
-            }
+        fs::create_dir_all(&dir).expect("Failed to create directories for: {dir:?}");
 
-            let dir = base_path.join(format!(".{val}"));
-            if let Err(e) = fs::create_dir_all(&dir) {
-                error!("Failed to create .{val} directory: {e}");
-                panic!("{e}");
-            }
+        let rel = src
+            .strip_prefix(&base_path)
+            .expect("Wallpaper prefix does not match base path");
+        let dst = dir.join(rel);
 
-            let rel = src
-                .strip_prefix(&base_path)
-                .expect("Wallpaper prefix does not match base path, might be symlink issue?");
-            let dst = dir.join(rel);
+        if let Some(parent) = dst.parent()
+            && let Err(e) = fs::create_dir_all(parent)
+        {
+            error!("Error (mkdir {parent:?}): {e}");
+            return;
+        }
 
-            if let Some(parent) = dst.parent() {
-                let _ = fs::create_dir_all(parent);
-            }
-
-            debug!(
-                "Symlinking...\nFrom path: {}\nTo path: {}",
+        debug!("Symlinking: {} <- {}", src.display(), dst.display());
+        if let Err(e) = unix::fs::symlink(src, &dst) {
+            error!(
+                "Error creating symlink ({} <- {}): {e}",
                 src.display(),
                 dst.display()
             );
-
-            if let Err(e) = unix::fs::symlink(src, dst) {
-                error!("Error adding to .{val} directory: {e}")
-            }
-
-            self.next_wallpaper();
         }
     }
 
