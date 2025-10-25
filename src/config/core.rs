@@ -1,24 +1,34 @@
-use std::{
-    error::Error,
-    fmt::{self, Display},
-    fs,
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::mpsc::{self, Sender},
-    thread,
-    time::Duration,
-};
+use std::error::Error;
+use std::fmt;
+use std::fmt::Display;
+use std::fs;
+use std::path::Path;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::mpsc;
+use std::sync::mpsc::Sender;
+use std::thread;
+use std::time::Duration;
 
-use log::{LevelFilter, debug, error, warn};
-use notify::{RecommendedWatcher, Watcher};
-use serde::{Deserialize, Serialize};
+use log::LevelFilter;
+use log::debug;
+use log::error;
+use log::warn;
+use notify::RecommendedWatcher;
+use notify::Watcher;
+use serde::Deserialize;
+use serde::Serialize;
 
-use super::{HighestRefreshRate, HighestResolution, Resolution, TransitionFlavour, defaults::*};
-use crate::{
-    commands::Commands,
-    utils::{self, DirError, Dirs},
-    wayland::WaylandHandle,
-};
+use super::HighestRefreshRate;
+use super::HighestResolution;
+use super::Resolution;
+use super::TransitionFlavour;
+use super::defaults::*;
+use crate::commands::Commands;
+use crate::utils;
+use crate::utils::DirError;
+use crate::utils::Dirs;
+use crate::wayland::WaylandHandle;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(default)]

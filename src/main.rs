@@ -3,13 +3,16 @@
 use std::sync::mpsc;
 
 use clap::Parser;
-use log::{LevelFilter, debug, error, warn};
-use walrus::{
-    commands::{Cli, Commands},
-    config::Config,
-    daemon::Daemon,
-    ipc, utils,
-};
+use log::LevelFilter;
+use log::debug;
+use log::error;
+use log::warn;
+use walrus::commands::Cli;
+use walrus::commands::Commands;
+use walrus::config::Config;
+use walrus::daemon::Daemon;
+use walrus::ipc;
+use walrus::utils;
 
 fn main() {
     let config = Config::new().unwrap_or_else(|e| {

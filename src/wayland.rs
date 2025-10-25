@@ -1,14 +1,17 @@
 use std::error::Error;
 
-use smithay_client_toolkit::{
-    delegate_output, delegate_registry,
-    output::{OutputHandler, OutputState},
-    registry::{ProvidesRegistryState, RegistryState},
-    registry_handlers,
-};
-use wayland_client::{
-    Connection, EventQueue, QueueHandle, globals::registry_queue_init, protocol::wl_output,
-};
+use smithay_client_toolkit::delegate_output;
+use smithay_client_toolkit::delegate_registry;
+use smithay_client_toolkit::output::OutputHandler;
+use smithay_client_toolkit::output::OutputState;
+use smithay_client_toolkit::registry::ProvidesRegistryState;
+use smithay_client_toolkit::registry::RegistryState;
+use smithay_client_toolkit::registry_handlers;
+use wayland_client::Connection;
+use wayland_client::EventQueue;
+use wayland_client::QueueHandle;
+use wayland_client::globals::registry_queue_init;
+use wayland_client::protocol::wl_output;
 
 use crate::config;
 

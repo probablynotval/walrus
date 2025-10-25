@@ -1,24 +1,28 @@
-use std::{
-    fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
-    ops::ControlFlow,
-    os::unix::{
-        fs::OpenOptionsExt,
-        net::{UnixListener, UnixStream},
-    },
-    path::{Path, PathBuf},
-    process,
-    sync::mpsc::Sender,
-    thread::{self, JoinHandle},
-};
+use std::fs;
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::io;
+use std::io::Read;
+use std::io::Write;
+use std::ops::ControlFlow;
+use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::net::UnixListener;
+use std::os::unix::net::UnixStream;
+use std::path::Path;
+use std::path::PathBuf;
+use std::process;
+use std::sync::mpsc::Sender;
+use std::thread;
+use std::thread::JoinHandle;
 
-use log::{debug, error};
-use nix::fcntl::{Flock, FlockArg};
+use log::debug;
+use log::error;
+use nix::fcntl::Flock;
+use nix::fcntl::FlockArg;
 
-use crate::{
-    commands::Commands,
-    utils::{self, Dirs},
-};
+use crate::commands::Commands;
+use crate::utils;
+use crate::utils::Dirs;
 
 pub struct IpcServer {
     socket_path: PathBuf,
@@ -202,7 +206,8 @@ pub fn send_ipc_command(command: Commands) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Mutex, mpsc};
+    use std::sync::Mutex;
+    use std::sync::mpsc;
 
     use super::*;
 

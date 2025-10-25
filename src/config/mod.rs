@@ -1,17 +1,19 @@
-use std::{
-    cmp::Ordering,
-    error::Error,
-    fmt::{self, Display, Formatter},
-    str::FromStr,
-};
+use std::cmp::Ordering;
+use std::error::Error;
+use std::fmt;
+use std::fmt::Display;
+use std::fmt::Formatter;
+use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 
 pub use self::core::Config;
 
 mod core;
 mod defaults {
-    use super::{Resolution, TransitionFlavour};
+    use super::Resolution;
+    use super::TransitionFlavour;
 
     pub(super) const DEFAULT_BEZIER: [f32; 4] = [0.4, 0.0, 0.6, 1.0];
     pub(super) const DEFAULT_DEBUG: &str = "info";

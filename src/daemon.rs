@@ -1,24 +1,32 @@
-use std::{
-    fmt::{self, Display},
-    fs,
-    os::unix,
-    path::{Path, PathBuf},
-    process::Command,
-    sync::mpsc::{self, Receiver},
-    time::Duration,
-};
+use std::fmt;
+use std::fmt::Display;
+use std::fs;
+use std::os::unix;
+use std::path::Path;
+use std::path::PathBuf;
+use std::process::Command;
+use std::sync::mpsc;
+use std::sync::mpsc::Receiver;
+use std::time::Duration;
 
-use log::{debug, error, info, warn};
-use rand::{Rng, SeedableRng, rngs::SmallRng, seq::SliceRandom};
+use log::debug;
+use log::error;
+use log::info;
+use log::warn;
+use rand::Rng;
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
+use rand::seq::SliceRandom;
 use walkdir::WalkDir;
 
-use crate::{
-    commands::Commands,
-    config::{Config, TransitionFlavour},
-    ipc::send_ipc_command,
-    transition::{Pos, TransitionArgBuilder, WaveSize},
-    utils::normalize_duration,
-};
+use crate::commands::Commands;
+use crate::config::Config;
+use crate::config::TransitionFlavour;
+use crate::ipc::send_ipc_command;
+use crate::transition::Pos;
+use crate::transition::TransitionArgBuilder;
+use crate::transition::WaveSize;
+use crate::utils::normalize_duration;
 
 #[derive(Debug)]
 pub struct Daemon {

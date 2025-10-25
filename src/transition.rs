@@ -1,4 +1,5 @@
-use std::fmt::{self, Display};
+use std::fmt;
+use std::fmt::Display;
 
 use crate::config::TransitionFlavour;
 

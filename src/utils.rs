@@ -1,19 +1,32 @@
-use std::{
-    env,
-    error::Error,
-    fmt::{self, Display},
-    fs::{self, File},
-    io,
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::env;
+use std::error::Error;
+use std::fmt;
+use std::fmt::Display;
+use std::fs;
+use std::fs::File;
+use std::io;
+use std::path::Path;
+use std::path::PathBuf;
+use std::str::FromStr;
 
-use log::{LevelFilter, debug, error, info, warn};
-use serde::{Deserialize, Deserializer};
-use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger};
-use time::{OffsetDateTime, format_description::well_known};
+use log::LevelFilter;
+use log::debug;
+use log::error;
+use log::info;
+use log::warn;
+use serde::Deserialize;
+use serde::Deserializer;
+use simplelog::ColorChoice;
+use simplelog::CombinedLogger;
+use simplelog::Config;
+use simplelog::TermLogger;
+use simplelog::TerminalMode;
+use simplelog::WriteLogger;
+use time::OffsetDateTime;
+use time::format_description::well_known;
 
-use crate::config::{Resolution, TransitionFlavour};
+use crate::config::Resolution;
+use crate::config::TransitionFlavour;
 
 pub const APPNAME: &str = "walrus";
 

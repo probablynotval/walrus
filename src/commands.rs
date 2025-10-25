@@ -1,5 +1,8 @@
-use bincode::{Decode, Encode, config};
-use clap::{Parser, Subcommand};
+use bincode::Decode;
+use bincode::Encode;
+use bincode::config;
+use clap::Parser;
+use clap::Subcommand;
 
 #[derive(Clone, Parser)]
 #[command(name = "Walrus", version = "0.1.2", about = "Convenient wrapper for swww with sensible defaults", long_about = None)]
