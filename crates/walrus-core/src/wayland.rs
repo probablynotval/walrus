@@ -41,7 +41,7 @@ impl WaylandHandle {
             outputs: Vec::new(),
         };
 
-        // NOTE: Hi future me, this double roundtrip is required, don't you dare touch it.
+        // This double roundtrip is required.
         event_queue.roundtrip(&mut state)?;
         event_queue.roundtrip(&mut state)?;
 
@@ -140,8 +140,9 @@ delegate_registry!(WaylandState);
 mod tests {
     use super::*;
 
-    // This test would fail if no monitors are detected/connected
-    // I see no reason to change that behaviour as is
+    // These tests will fail if no monitors are detected/connected. I see no reason to change that
+    // behaviour as is.
+    // TODO: As these are environment depdendent tests, I should move them to integration tests.
     #[test]
     fn test_find_monitor() {
         let mut wlhandle = WaylandHandle::new().expect("Failed to create handle");

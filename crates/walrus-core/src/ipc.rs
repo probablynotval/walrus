@@ -15,8 +15,6 @@ use std::sync::mpsc::Sender;
 use std::thread;
 use std::thread::JoinHandle;
 
-use log::debug;
-use log::error;
 use nix::fcntl::Flock;
 use nix::fcntl::FlockArg;
 
@@ -47,10 +45,10 @@ impl IpcServer {
 
     fn start(&self, tx: Sender<Commands>) -> JoinHandle<()> {
         if self.socket_path.exists() {
-            debug!("Socket file already exists (cleanup may have failed)");
+            tracing::debug!("Socket file already exists (cleanup may have failed)");
 
             if let Err(e) = fs::remove_file(&self.socket_path) {
-                error!("Failed to remove socket file: {e}");
+                tracing::error!("Failed to remove socket file: {e}");
                 process::exit(1);
             }
         }
@@ -60,7 +58,7 @@ impl IpcServer {
         thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(mut stream) = stream else {
-                    error!("Error accepting connection: {}", stream.unwrap_err());
+                    tracing::error!("Error accepting connection: {}", stream.unwrap_err());
                     continue;
                 };
 
@@ -119,7 +117,7 @@ impl Drop for IpcGuard {
                 continue;
             }
             if let Err(e) = fs::remove_file(path) {
-                error!("Failed to clean up file {:?}: {e}", path);
+                tracing::error!("Failed to clean up file {:?}: {e}", path);
             }
         }
     }
@@ -135,15 +133,15 @@ fn acquire_lock(lock_path: &Path) -> Flock<File> {
         .expect("Error creating lock file");
     match Flock::lock(lock_file, FlockArg::LockExclusiveNonblock) {
         Ok(flock) => {
-            debug!("Successfully acquired lock file");
+            tracing::debug!("Successfully acquired lock file");
             flock
         }
         Err((_, nix::Error::EWOULDBLOCK)) => {
-            error!("An instance is already running (lock file is locked)");
+            tracing::error!("An instance is already running (lock file is locked)");
             process::exit(1)
         }
         Err((_, e)) => {
-            error!("Error locking lock file: {e}");
+            tracing::error!("Error locking lock file: {e}");
             process::exit(1)
         }
     }
@@ -152,19 +150,19 @@ fn acquire_lock(lock_path: &Path) -> Flock<File> {
 fn parse_stream<R: Read>(stream: &mut R, tx: &Sender<Commands>) -> ControlFlow<()> {
     let mut len_buffer = [0u8; 2];
     if let Err(e) = stream.read_exact(&mut len_buffer) {
-        error!("Error reading length prefix: {e}");
+        tracing::error!("Error reading length prefix: {e}");
         return ControlFlow::Continue(());
     }
     let len = u16::from_le_bytes(len_buffer);
 
     let mut cmd_buffer = vec![0u8; len.into()];
     if let Err(e) = stream.read_exact(&mut cmd_buffer) {
-        error!("Error reading command bytes: {e}");
+        tracing::error!("Error reading command bytes: {e}");
         return ControlFlow::Continue(());
     }
 
     if let Some(command) = Commands::from_bytes(&cmd_buffer) {
-        debug!("IPC received {:?} command", command);
+        tracing::debug!("IPC received {:?} command", command);
         let _ = tx.send(command.clone());
 
         return match command {
@@ -178,7 +176,7 @@ fn parse_stream<R: Read>(stream: &mut R, tx: &Sender<Commands>) -> ControlFlow<(
 
 fn get_paths() -> (PathBuf, PathBuf) {
     let runtime_dir = utils::get_dir(Dirs::Runtime).unwrap_or_else(|e| {
-        error!("Error getting runtime directory: {}", e);
+        tracing::error!("Error getting runtime directory: {}", e);
         process::exit(1)
     });
     let socket_path = runtime_dir.join("walrus");
@@ -186,8 +184,8 @@ fn get_paths() -> (PathBuf, PathBuf) {
     (socket_path, lock_path)
 }
 
-pub fn setup_ipc(tx: Sender<Commands>) -> IpcServer {
-    debug!("Starting IPC server");
+pub fn start_server(tx: Sender<Commands>) -> IpcServer {
+    tracing::debug!("Starting IPC server");
     let (socket_path, lock_path) = get_paths();
     let server = IpcServer::new(socket_path, lock_path);
     server.start(tx);
@@ -195,8 +193,8 @@ pub fn setup_ipc(tx: Sender<Commands>) -> IpcServer {
     server
 }
 
-pub fn send_ipc_command(command: Commands) -> io::Result<()> {
-    debug!("IPC sending {:?} command", command);
+pub fn send_command(command: Commands) -> io::Result<()> {
+    tracing::debug!("IPC sending {:?} command", command);
 
     let (socket_path, _) = get_paths();
 

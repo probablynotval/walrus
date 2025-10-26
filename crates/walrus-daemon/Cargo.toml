@@ -1,0 +1,18 @@
+[package]
+name = "walrus-daemon"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "walrus-daemon"
+path = "src/main.rs"
+
+[dependencies]
+walrus-core = { path = "../walrus-core" }
+ctrlc = { workspace = true }
+rand = { workspace = true }
+tracing = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-journald = { workspace = true }
+tracing-subscriber = { workspace = true }
+walkdir = { workspace = true }

@@ -10,13 +10,10 @@ use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::Duration;
 
-use log::LevelFilter;
-use log::debug;
-use log::error;
-use log::warn;
 use notify::RecommendedWatcher;
 use notify::Watcher;
 use serde::Deserialize;
+use serde::Deserializer;
 use serde::Serialize;
 
 use super::HighestRefreshRate;
@@ -25,6 +22,9 @@ use super::Resolution;
 use super::TransitionFlavour;
 use super::defaults::*;
 use crate::commands::Commands;
+use crate::config::Bezier;
+use crate::config::FilterMethod;
+use crate::config::ResizeMethod;
 use crate::utils;
 use crate::utils::DirError;
 use crate::utils::Dirs;
@@ -43,7 +43,7 @@ impl Config {
             Ok(p) => p,
             Err(e) => match e {
                 DirError::InvalidPath(_) | DirError::IoError(_) | DirError::MissingVar(_) => {
-                    error!("Error getting config file: {}", e);
+                    tracing::error!("Error getting config file: {}", e);
                     return Err(e.into());
                 }
                 DirError::DoesNotExist(_) => unreachable!(),
@@ -55,8 +55,8 @@ impl Config {
 
     fn from_raw(config_raw: &str) -> Self {
         let mut config: Self = toml::from_str(config_raw).unwrap_or_else(|e| {
-            error!("Error parsing config: {e}");
-            warn!("Falling back to default config...");
+            tracing::error!("Error parsing config: {e}");
+            tracing::warn!("Falling back to default config...");
             Self::default()
         });
 
@@ -71,14 +71,14 @@ impl Config {
                 })
                 .map_or_else(
                     || {
-                        error!("No monitors found");
-                        warn!("Falling back to default FPS and resolution");
+                        tracing::error!("No monitors found");
+                        tracing::warn!("Falling back to default FPS and resolution");
                         (FALLBACK_FPS, FALLBACK_RESOLUTION)
                     },
                     |m| (m.refresh_rate.round() as u32, m.resolution),
                 ),
             Err(e) => {
-                warn!("Failed to connect to Wayland: {e}");
+                tracing::warn!("Failed to connect to Wayland: {e}");
                 (FALLBACK_FPS, FALLBACK_RESOLUTION)
             }
         };
@@ -105,7 +105,7 @@ impl Config {
     }
 
     pub fn watch<P: AsRef<Path>>(path: P, cmd_tx: Sender<Commands>) -> notify::Result<()> {
-        debug!("Starting watcher...");
+        tracing::debug!("Starting watcher...");
         let (tx, rx) = mpsc::channel();
         let mut watcher = RecommendedWatcher::new(
             tx,
@@ -123,18 +123,18 @@ impl Config {
 
             while let Ok(event_res) = rx.recv() {
                 let event = event_res?;
-                debug!("File event: {event:?}");
+                tracing::debug!("File event: {event:?}");
                 if event.kind.is_modify() || event.kind.is_remove() {
                     cmd_tx.send(Commands::Reload).unwrap();
 
                     if event.kind.is_remove() {
-                        debug!("File removed, trying to re-establish watch");
+                        tracing::debug!("File removed, trying to re-establish watch");
                         thread::sleep(Duration::from_millis(200));
                         watcher.watch(abs_path.as_ref(), notify::RecursiveMode::NonRecursive)?;
                     }
                 }
             }
-            warn!("Watcher thread stopping; config hot reloading stopped");
+            tracing::warn!("Watcher thread stopping; config hot reloading stopped");
             Ok(())
         });
 
@@ -155,10 +155,6 @@ impl Config {
         self.transition().bezier()
     }
 
-    pub fn debug(&self) -> LevelFilter {
-        self.general().debug()
-    }
-
     pub fn duration(&self) -> f64 {
         self.transition().duration()
     }
@@ -171,7 +167,7 @@ impl Config {
         self.transition().fill()
     }
 
-    pub fn filter(&self) -> String {
+    pub fn filter(&self) -> FilterMethod {
         self.transition().filter()
     }
 
@@ -187,7 +183,7 @@ impl Config {
         self.general().interval()
     }
 
-    pub fn resize(&self) -> String {
+    pub fn resize(&self) -> ResizeMethod {
         self.transition().resize()
     }
 
@@ -218,18 +214,16 @@ impl Config {
 
 impl Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "\nCurrent configuration")?;
-        writeln!(f, "---------------------")?;
-        writeln!(f, "{}", self.general.clone().unwrap_or_default())?;
-        writeln!(f, "{}", self.transition.clone().unwrap_or_default())?;
-        Ok(())
+        match toml::to_string(self) {
+            Ok(toml) => write!(f, "{toml}"),
+            Err(e) => write!(f, "Error serializing config: {e}"),
+        }
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub(super) struct General {
-    pub(super) debug: Option<String>,
     pub(super) interval: Option<u64>,
     pub(super) resolution: Option<Resolution>,
     pub(super) shuffle: Option<bool>,
@@ -238,22 +232,6 @@ pub(super) struct General {
 }
 
 impl General {
-    pub fn debug(&self) -> LevelFilter {
-        match LevelFilter::from_str(
-            self.debug
-                .as_deref()
-                .unwrap_or(DEFAULT_DEBUG)
-                .to_lowercase()
-                .as_str(),
-        ) {
-            Ok(dbglvl) => dbglvl,
-            Err(_) => {
-                warn!("Unknown debug option in config, falling back to default.");
-                LevelFilter::Info
-            }
-        }
-    }
-
     pub fn interval(&self) -> u64 {
         self.interval.unwrap_or(DEFAULT_INTERVAL)
     }
@@ -282,7 +260,6 @@ impl Default for General {
             .join(DEFAULT_WALLPAPER_DIR);
 
         General {
-            debug: Some(DEFAULT_DEBUG.into()),
             interval: Some(DEFAULT_INTERVAL),
             resolution: None,
             shuffle: Some(DEFAULT_SHUFFLE),
@@ -292,59 +269,26 @@ impl Default for General {
     }
 }
 
-impl Display for General {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "[General]")?;
-        writeln!(f, "debug = {}", self.debug.as_deref().unwrap_or("None"))?;
-        writeln!(
-            f,
-            "interval = {}",
-            self.interval
-                .map(|x| x.to_string())
-                .unwrap_or_else(|| "None".into())
-        )?;
-        let resolution = self.resolution.as_ref().unwrap();
-        writeln!(
-            f,
-            "resolution = {{ width = {}, height = {} }}",
-            resolution.width, resolution.height
-        )?;
-        writeln!(
-            f,
-            "shuffle = {}",
-            self.shuffle.map(|x| x.to_string()).unwrap_or("None".into())
-        )?;
-        writeln!(
-            f,
-            "swww_path = {}",
-            self.swww_path.as_deref().unwrap_or("None")
-        )?;
-        writeln!(
-            f,
-            "wallpaper_path = {}",
-            self.wallpaper_path.as_deref().map(|x| x.display()).unwrap()
-        )
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub(super) struct Transition {
-    pub(super) bezier: Option<[f32; 4]>,
+    pub(super) bezier: Option<Bezier>,
     pub(super) duration: Option<f64>,
     pub(super) dynamic_duration: Option<bool>,
     pub(super) fill: Option<String>,
-    pub(super) filter: Option<String>,
-    #[serde(deserialize_with = "utils::deserialize_flavour")]
+    #[serde(deserialize_with = "deserialize_filter")]
+    pub(super) filter: Option<FilterMethod>,
+    #[serde(deserialize_with = "deserialize_flavour")]
     pub(super) flavour: Option<Vec<TransitionFlavour>>,
     pub(super) fps: Option<u32>,
-    pub(super) resize: Option<String>,
+    #[serde(deserialize_with = "deserialize_resize")]
+    pub(super) resize: Option<ResizeMethod>,
     pub(super) step: Option<u8>,
     pub(super) wave_size: Option<(u32, u32, u32, u32)>,
 }
 
 impl Transition {
-    pub fn bezier(&self) -> [f32; 4] {
+    pub fn bezier(&self) -> Bezier {
         self.bezier.unwrap_or(DEFAULT_BEZIER)
     }
 
@@ -360,8 +304,8 @@ impl Transition {
         self.fill.as_deref().unwrap_or(DEFAULT_FILL).into()
     }
 
-    pub fn filter(&self) -> String {
-        self.filter.as_deref().unwrap_or(DEFAULT_FILTER).into()
+    pub fn filter(&self) -> FilterMethod {
+        self.filter.clone().unwrap_or(DEFAULT_FILTER)
     }
 
     pub fn flavour(&self) -> Vec<TransitionFlavour> {
@@ -372,8 +316,8 @@ impl Transition {
         self.fps.unwrap_or(FALLBACK_FPS)
     }
 
-    pub fn resize(&self) -> String {
-        self.resize.as_deref().unwrap_or(DEFAULT_RESIZE).into()
+    pub fn resize(&self) -> ResizeMethod {
+        self.resize.clone().unwrap_or(DEFAULT_RESIZE)
     }
 
     pub fn step(&self) -> u8 {
@@ -392,71 +336,66 @@ impl Default for Transition {
             duration: Some(DEFAULT_DURATION),
             dynamic_duration: Some(DEFAULT_DYNAMIC_DURATION),
             fill: Some(DEFAULT_FILL.into()),
-            filter: Some(DEFAULT_FILL.into()),
+            filter: Some(DEFAULT_FILTER),
             flavour: Some(DEFAULT_FLAVOUR.into()),
             fps: None,
-            resize: Some(DEFAULT_RESIZE.into()),
+            resize: Some(DEFAULT_RESIZE),
             step: Some(DEFAULT_STEP),
             wave_size: Some(DEFAULT_WAVE_SIZE),
         }
     }
 }
 
-impl Display for Transition {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "[Transition]")?;
-        let bezier = self.bezier.unwrap();
-        writeln!(
-            f,
-            "bezier = [{}, {}, {}, {}]",
-            bezier[0], bezier[1], bezier[2], bezier[3]
-        )?;
-        writeln!(
-            f,
-            "duration = {}",
-            self.duration
-                .map(|x| x.to_string())
-                .unwrap_or_else(|| "None".into())
-        )?;
-        writeln!(
-            f,
-            "dynamic_duration = {}",
-            self.dynamic_duration
-                .map(|x| x.to_string())
-                .unwrap_or_else(|| "None".into())
-        )?;
-        writeln!(f, "fill = {}", self.fill.as_deref().unwrap_or("None"))?;
-        writeln!(f, "filter = {}", self.filter.as_deref().unwrap_or("None"))?;
-        let flavour_str = self
-            .flavour
-            .clone()
-            .unwrap_or(DEFAULT_FLAVOUR.into())
-            .iter()
-            .map(|f| f.to_string())
-            .collect::<Vec<String>>()
-            .join(", ");
-        writeln!(f, "flavour = [{flavour_str}]")?;
-        writeln!(
-            f,
-            "fps = {}",
-            self.fps
-                .map(|x| x.to_string())
-                .unwrap_or_else(|| "None".into())
-        )?;
-        writeln!(
-            f,
-            "step = {}",
-            self.step
-                .map(|x| x.to_string())
-                .unwrap_or_else(|| "None".into())
-        )?;
-        writeln!(f, "resize = {}", self.resize.as_deref().unwrap_or("None"))?;
-        let wave_size = self.wave_size.unwrap();
-        writeln!(
-            f,
-            "wave_size = [{}, {}, {}, {}]",
-            wave_size.0, wave_size.1, wave_size.2, wave_size.3,
-        )
+fn deserialize_filter<'de, D>(d: D) -> Result<Option<FilterMethod>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let method: Option<String> = Option::deserialize(d)?;
+
+    match method {
+        Some(method) => {
+            let result: Result<FilterMethod, D::Error> =
+                FilterMethod::from_str(&method.to_lowercase()).map_err(serde::de::Error::custom);
+            result.map(Some)
+        }
+        None => Ok(None),
+    }
+}
+
+fn deserialize_flavour<'de, D>(d: D) -> Result<Option<Vec<TransitionFlavour>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let flavours: Option<Vec<String>> = Option::deserialize(d)?;
+
+    match flavours {
+        Some(flavours) => {
+            let result: Result<Vec<TransitionFlavour>, D::Error> = flavours
+                .into_iter()
+                .map(|flavour| {
+                    TransitionFlavour::from_str(&flavour.to_lowercase())
+                        .map_err(serde::de::Error::custom)
+                })
+                .collect();
+            result.map(Some)
+        }
+        None => Ok(None),
+    }
+}
+
+fn deserialize_resize<'de, D>(d: D) -> Result<Option<ResizeMethod>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let method: Option<String> = Option::deserialize(d)?;
+
+    match method {
+        Some(method) => {
+            let result: Result<ResizeMethod, D::Error> =
+                ResizeMethod::from_str(&method.to_lowercase()).map_err(serde::de::Error::custom);
+            result.map(Some)
+        }
+        None => Ok(None),
     }
 }
 

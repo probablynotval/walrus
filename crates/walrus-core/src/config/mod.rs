@@ -1,5 +1,4 @@
 use std::cmp::Ordering;
-use std::error::Error;
 use std::fmt;
 use std::fmt::Display;
 use std::fmt::Formatter;
@@ -14,21 +13,22 @@ mod core;
 mod defaults {
     use super::Resolution;
     use super::TransitionFlavour;
+    use crate::config::FilterMethod;
+    use crate::config::ResizeMethod;
 
     pub(super) const DEFAULT_BEZIER: [f32; 4] = [0.4, 0.0, 0.6, 1.0];
-    pub(super) const DEFAULT_DEBUG: &str = "info";
     pub(super) const DEFAULT_DURATION: f64 = 1.0;
     pub(super) const DEFAULT_DYNAMIC_DURATION: bool = true;
     pub(super) const DEFAULT_INTERVAL: u64 = 300;
     pub(super) const DEFAULT_FILL: &str = "000000";
-    pub(super) const DEFAULT_FILTER: &str = "Lanczos3";
+    pub(super) const DEFAULT_FILTER: FilterMethod = FilterMethod::Lanczos3;
     pub(super) const DEFAULT_FLAVOUR: [TransitionFlavour; 4] = [
         TransitionFlavour::Wipe,
         TransitionFlavour::Wave,
         TransitionFlavour::Grow,
         TransitionFlavour::Outer,
     ];
-    pub(super) const DEFAULT_RESIZE: &str = "crop";
+    pub(super) const DEFAULT_RESIZE: ResizeMethod = ResizeMethod::No;
     pub(super) const DEFAULT_SHUFFLE: bool = true;
     pub(super) const DEFAULT_STEP: u8 = 60;
     pub(super) const DEFAULT_SWW_PATH: &str = "/usr/bin/swww";
@@ -123,6 +123,18 @@ impl PartialOrd for HighestResolution<'_> {
     }
 }
 
+pub type Bezier = [f32; 4];
+
+pub struct Pos {
+    pub x: f32,
+    pub y: f32,
+}
+
+pub struct WaveSize {
+    pub width: u32,
+    pub height: u32,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum TransitionFlavour {
     Wipe,
@@ -143,7 +155,7 @@ impl Display for TransitionFlavour {
 }
 
 impl FromStr for TransitionFlavour {
-    type Err = ParseTransitionFlavourError;
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
@@ -151,22 +163,73 @@ impl FromStr for TransitionFlavour {
             "wave" => Ok(Self::Wave),
             "grow" => Ok(Self::Grow),
             "outer" => Ok(Self::Outer),
-            _ => Err(Self::Err::InvalidFlavour(s.to_string())),
+            _ => Err(format!("Invalid transition type: {s}")),
         }
     }
 }
 
-#[derive(Debug)]
-pub enum ParseTransitionFlavourError {
-    InvalidFlavour(String),
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum FilterMethod {
+    Nearest,
+    Bilinear,
+    CatmullRom,
+    Mitchell,
+    Lanczos3,
 }
 
-impl Display for ParseTransitionFlavourError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+impl Display for FilterMethod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidFlavour(s) => writeln!(f, "Invalid transition type: {s}"),
+            Self::Nearest => write!(f, "Nearest"),
+            Self::Bilinear => write!(f, "Bilinear"),
+            Self::CatmullRom => write!(f, "CatmullRom"),
+            Self::Mitchell => write!(f, "Mitchell"),
+            Self::Lanczos3 => write!(f, "Lanczos3"),
         }
     }
 }
 
-impl Error for ParseTransitionFlavourError {}
+impl FromStr for FilterMethod {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "nearest" => Ok(Self::Nearest),
+            "bilinear" => Ok(Self::Bilinear),
+            "catmullrom" => Ok(Self::CatmullRom),
+            "mitchell" => Ok(Self::Mitchell),
+            "lanczos3" => Ok(Self::Lanczos3),
+            _ => Err(format!("Invalid filter method: {s}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ResizeMethod {
+    No,
+    Crop,
+    Fit,
+}
+
+impl Display for ResizeMethod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::No => write!(f, "no"),
+            Self::Fit => write!(f, "fit"),
+            Self::Crop => write!(f, "crop"),
+        }
+    }
+}
+
+impl FromStr for ResizeMethod {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "no" => Ok(Self::No),
+            "fit" => Ok(Self::Fit),
+            "crop" => Ok(Self::Crop),
+            _ => Err(format!("Invalid resize method: {s}")),
+        }
+    }
+}

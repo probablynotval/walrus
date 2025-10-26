@@ -1,55 +1,9 @@
-use std::fmt;
-use std::fmt::Display;
-
-use crate::config::TransitionFlavour;
-
-type Bezier = [f32; 4];
-
-pub struct Pos {
-    pub x: f32,
-    pub y: f32,
-}
-
-pub struct WaveSize {
-    pub width: u32,
-    pub height: u32,
-}
-
-pub enum FilterMethod {
-    Nearest,
-    Bilinear,
-    CatmullRom,
-    Mitchell,
-    Lanczos3,
-}
-
-pub enum ResizeMethod {
-    No,
-    Crop,
-    Fit,
-}
-
-impl Display for ResizeMethod {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::No => write!(f, "no"),
-            Self::Fit => write!(f, "fit"),
-            Self::Crop => write!(f, "crop"),
-        }
-    }
-}
-
-impl Display for FilterMethod {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Nearest => write!(f, "Nearest"),
-            Self::Bilinear => write!(f, "Bilinear"),
-            Self::CatmullRom => write!(f, "CatmullRom"),
-            Self::Mitchell => write!(f, "Mitchell"),
-            Self::Lanczos3 => write!(f, "Lanczos3"),
-        }
-    }
-}
+use walrus_core::config::Bezier;
+use walrus_core::config::FilterMethod;
+use walrus_core::config::Pos;
+use walrus_core::config::ResizeMethod;
+use walrus_core::config::TransitionFlavour;
+use walrus_core::config::WaveSize;
 
 enum ImgArg {
     Resize(ResizeMethod),
@@ -69,7 +23,7 @@ impl ImgArg {
     fn to_args(&self) -> Vec<String> {
         match self {
             Self::Resize(resize) => vec!["--resize".into(), resize.to_string()],
-            Self::FillColor(color) => vec!["--fill-color".into(), color.to_string()],
+            Self::FillColor(color) => vec!["--fill-color".into(), color.clone()],
             Self::Filter(filter) => vec!["--filter".into(), filter.to_string()],
             Self::TransitionType(flavour) => vec!["--transition-type".into(), flavour.to_string()],
 

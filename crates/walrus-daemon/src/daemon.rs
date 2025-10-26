@@ -9,24 +9,20 @@ use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use log::debug;
-use log::error;
-use log::info;
-use log::warn;
 use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use walkdir::WalkDir;
+use walrus_core::commands::Commands;
+use walrus_core::config::Config;
+use walrus_core::config::Pos;
+use walrus_core::config::Resolution;
+use walrus_core::config::TransitionFlavour;
+use walrus_core::config::WaveSize;
+use walrus_core::ipc;
 
-use crate::commands::Commands;
-use crate::config::Config;
-use crate::config::TransitionFlavour;
-use crate::ipc::send_ipc_command;
-use crate::transition::Pos;
 use crate::transition::TransitionArgBuilder;
-use crate::transition::WaveSize;
-use crate::utils::normalize_duration;
 
 #[derive(Debug)]
 pub struct Daemon {
@@ -40,7 +36,7 @@ impl Daemon {
     pub fn new(config: Config) -> Self {
         let directory = config.wallpaper_path();
 
-        debug!("Starting with Config: {}", config);
+        tracing::debug!("Starting with Config: {}", config);
         Self {
             config,
             paused: false,
@@ -49,18 +45,18 @@ impl Daemon {
         }
     }
 
-    pub fn run(&mut self, rx: Receiver<Commands>) {
+    pub fn run(&mut self, rx: &Receiver<Commands>) {
         // TODO: have different sorting options (enum and match)
         if self.config.shuffle() {
             self.queue.shuffle();
         } else {
             self.queue.sort();
         }
-        debug!("{:#?}", self.queue);
+        tracing::debug!("{:#?}", self.queue);
 
         // Set wallpaper initially.
         if let Some(wallpaper) = self.queue.get_current() {
-            info!("Setting wallpaper: {}", wallpaper.display());
+            tracing::info!("Setting wallpaper: {}", wallpaper.display());
             self.set_wallpaper(wallpaper.clone().as_path());
         }
 
@@ -75,19 +71,19 @@ impl Daemon {
                     self.create_category_symlink(self.queue.get_current().unwrap(), &category);
                 }
                 Ok(Commands::Next) => {
-                    debug!("Received Next command");
+                    tracing::debug!("Received Next command");
                     self.next_wallpaper();
                 }
                 Ok(Commands::Pause) => {
-                    debug!("Received Pause command");
+                    tracing::debug!("Received Pause command");
                     self.pause();
                 }
                 Ok(Commands::Previous) => {
-                    debug!("Received Previous command");
+                    tracing::debug!("Received Previous command");
                     self.previous_wallpaper();
                 }
                 Ok(Commands::Resume) => {
-                    debug!("Received Resume command");
+                    tracing::debug!("Received Resume command");
                     self.resume();
                 }
                 /*
@@ -96,20 +92,20 @@ impl Daemon {
                  * the watcher checks whether a new file can be found.
                  */
                 Ok(Commands::Reload) => {
-                    debug!("Received Reload command");
+                    tracing::debug!("Received Reload command");
                     self.reload_config();
                 }
                 Ok(Commands::Shutdown) => {
-                    debug!("Received Shutdown command");
+                    tracing::debug!("Received Shutdown command");
                     cont = false;
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if !self.paused {
-                        debug!("Timeout: changing wallpapers...");
+                        tracing::debug!("Timeout: changing wallpapers...");
                         self.next_wallpaper();
                         continue;
                     }
-                    debug!("Timeout: paused, not changing wallpapers");
+                    tracing::debug!("Timeout: paused, not changing wallpapers");
                 }
                 /*
                  * Unsure when this can happen. One such case is if there is an instance of walrus
@@ -117,7 +113,7 @@ impl Daemon {
                  * Since file locking was later implemented, that should not happen.
                  */
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    error!("Timeout: channel disconnected");
+                    tracing::error!("Timeout: channel disconnected");
                     cont = false;
                 }
             }
@@ -138,13 +134,13 @@ impl Daemon {
         if let Some(parent) = dst.parent()
             && let Err(e) = fs::create_dir_all(parent)
         {
-            error!("Error (mkdir {parent:?}): {e}");
+            tracing::error!("Error (mkdir {parent:?}): {e}");
             return;
         }
 
-        debug!("Symlinking: {} <- {}", src.display(), dst.display());
+        tracing::debug!("Symlinking: {} <- {}", src.display(), dst.display());
         if let Err(e) = unix::fs::symlink(src, &dst) {
-            error!(
+            tracing::error!(
                 "Error creating symlink ({} <- {}): {e}",
                 src.display(),
                 dst.display()
@@ -158,7 +154,10 @@ impl Daemon {
         let bezier = self.config.bezier();
         let duration = self.config.duration();
         let dynamic_duration = self.config.dynamic_duration();
+        let fill = self.config.fill();
+        let filter = self.config.filter();
         let fps = self.config.fps();
+        let resize = self.config.resize();
         let step = self.config.step();
 
         let flavours = self.config.flavour();
@@ -177,7 +176,10 @@ impl Daemon {
         let builder = TransitionArgBuilder::new()
             .with_transition(flavour)
             .with_duration(duration)
+            .with_fill(fill)
+            .with_filter(filter)
             .with_fps(fps)
+            .with_resize(resize)
             .with_step(step)
             .with_bezier(bezier);
 
@@ -210,17 +212,17 @@ impl Daemon {
         if let Some(current) = self.queue.get_current()
             && !current.exists()
         {
-            warn!("Wallpaper in this position is missing, removing it from queue.");
+            tracing::warn!("Wallpaper in this position is missing, removing it from queue.");
             self.queue.cleanup_invalid_files();
         }
 
         if let Some(wallpaper) = self.queue.get_current() {
             let wallpaper = wallpaper.clone();
-            info!("Setting wallpaper: {}", wallpaper.display());
-            self.set_wallpaper(wallpaper.as_path())
+            tracing::info!("Setting wallpaper: {}", wallpaper.display());
+            self.set_wallpaper(wallpaper.as_path());
         } else {
-            error!("No valid path found in queue, shutting down");
-            let _ = send_ipc_command(Commands::Shutdown);
+            tracing::error!("No valid path found in queue, shutting down");
+            let _ = ipc::send_command(Commands::Shutdown);
         }
     }
 
@@ -258,14 +260,13 @@ impl Daemon {
     // it does that. For example Neovim uses atomic file writing, but other editors might do this
     // differently so the debug information depends on how the file is edited.
     fn reload_config(&mut self) {
-        info!("Reloading config...");
+        tracing::info!("Reloading config...");
         let config = Config::new().unwrap_or_else(|e| {
-            error!("Error in config: {e}");
-            warn!("Falling back to default config...");
+            tracing::error!("Error in config: {e}");
+            tracing::warn!("Falling back to default config...");
             Config::default()
         });
         self.config = config;
-        log::set_max_level(self.config.debug());
     }
 }
 
@@ -288,15 +289,14 @@ impl Queue {
             queue: WalkDir::new(dir)
                 .follow_links(true)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| {
                     !entry
                         .path()
                         .components()
                         .nth(dir.components().count())
                         .and_then(|c| c.as_os_str().to_str())
-                        .map(|s| s == ".like" || s == ".dislike")
-                        .unwrap_or(false)
+                        .is_some_and(|s| s == ".like" || s == ".dislike")
                 })
                 .filter(|entry| entry.path().is_file())
                 .map(|entry| entry.path().to_owned())
@@ -322,13 +322,13 @@ impl Queue {
 
     fn next(&mut self) {
         if !self.queue.is_empty() {
-            self.index = (self.index + 1) % self.queue.len()
+            self.index = (self.index + 1) % self.queue.len();
         }
     }
 
     fn previous(&mut self) {
         if !self.queue.is_empty() {
-            self.index = (self.index + self.queue.len() - 1) % self.queue.len()
+            self.index = (self.index + self.queue.len() - 1) % self.queue.len();
         }
     }
 
@@ -355,4 +355,16 @@ impl Display for Queue {
         }
         Ok(())
     }
+}
+
+pub fn normalize_duration(base_duration: f64, res: Resolution, angle_degrees: f32) -> f64 {
+    let width = f64::from(res.width);
+    let height = f64::from(res.height);
+
+    let theta: f64 = angle_degrees.to_radians().into();
+    let distance_at_angle = (width * theta.cos().abs()) + (height * theta.sin().abs());
+    tracing::debug!("DistanceAtAngle: {distance_at_angle}");
+    let diagonal_distance = (width.powi(2) + height.powi(2)).sqrt();
+    let ratio = diagonal_distance / distance_at_angle;
+    base_duration * ratio
 }
